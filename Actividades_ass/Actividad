@@ -19,3 +19,11 @@ struct informacion_operador
 
 //¿Qué tamaño en bytes ocupa una variable de tipo struct informacion_celda en memoria?
   /* 116 bytes */
+
+
+  /* Pregunta 2 
+  Las siguientes dos líneas declaran dos variables. ¿Cuál de ellas ocupa más espacio en memoria?*/
+
+struct informacion_celda a;
+struct informacion_celda *b;
+

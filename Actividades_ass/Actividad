@@ -27,3 +27,4 @@ struct informacion_operador
 struct informacion_celda a;
 struct informacion_celda *b;
 
+/*La variable que ocupa mas espacio en memoria es a, que es una estructura de tipo struct informacion_celda.*/

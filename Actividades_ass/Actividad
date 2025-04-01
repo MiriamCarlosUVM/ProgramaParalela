@@ -16,10 +16,17 @@ struct informacion_operador
     unsigned int ultima_comprob; /* Fecha de la oltima comprobacion */ 
 };
 
+/*Pregunta 1
+¿Qué tamaño en bytes ocupa una variable de tipo struct informacion_celda en memoria?
 
-//¿Qué tamaño en bytes ocupa una variable de tipo struct informacion_celda en memoria?
-  /* 116 bytes */
-
+  /* Al trabajar en un sistema de 64 bits tenemos que: 
+  los punteros ocupan 8 bytes y que los enteros int y float necesitan un padding que ocupa 4 bytes, por lo tanto seria:
+  nombre[100]: 100 bytes
+  identifiacdor(int): 4 bytes
+  padding: 4 bytes
+  calidad_senal (float) 4 bytes
+  ptr_operador 8 bytes
+              total de bytes: 120 bytes    */ 
 
 
   /* Pregunta 2 
@@ -44,11 +51,15 @@ Si una variable de tipo struct informacion_celda está almacenada en la posició
 ¿qué dirección tienen cada uno de sus campos? */
 
 /* variable --- direccion (base 100)
-   Nombre    -     100
-   identificador - 200
-   calidad_senal - 204
-   ptr_operador  - 212
-
-Nota: los offeset serian nombre: 0, identificador: 100, calidad_senal: 104, ptr_operador: 112, al estar en base 100 dan los resultados 
-de arriba
+   Nombre    -     100-199
+   identificador - 200-203
+   padding       - 204-207
+   calidad_senal - 208-211
+   ptr_operador  - 212-220
 */
+
+/* Pregunta 5
+Si una variable de tipo struct informacion_celda* está almacenada en la posición de memoria 100, 
+¿qué dirección tiene cada uno de sus campos?
+R: Al tratarse de un puntero que solamente esta almacenado en la direccion 100 pero la estructura real esta en otro lugar de memoria 
+-- Ocuparia 8 bytes en la direccion 100-107    */

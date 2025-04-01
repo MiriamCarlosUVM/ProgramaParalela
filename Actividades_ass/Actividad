@@ -21,10 +21,34 @@ struct informacion_operador
   /* 116 bytes */
 
 
+
   /* Pregunta 2 
   Las siguientes dos líneas declaran dos variables. ¿Cuál de ellas ocupa más espacio en memoria?*/
 
 struct informacion_celda a;
 struct informacion_celda *b;
 
-/*La variable que ocupa mas espacio en memoria es a, que es una estructura de tipo struct informacion_celda.*/
+/*R: La variable que ocupa mas espacio en memoria es a, que es una estructura de tipo struct informacion_celda.*/
+
+
+/*Pregunta 3
+¿Que tamaños tienen las siguientes variables*/
+struct informacion_celda *ptr1, *ptr2;
+struct informacion_operador *i1, *i2;
+
+/*R: Al tratarse de un sistema de 64 bits, los 4 punteros ocupan 8 bytes lo que serian 32 bytes en conjunto */
+
+
+/* Pregunta 4
+Si una variable de tipo struct informacion_celda está almacenada en la posición de memoria 100, 
+¿qué dirección tienen cada uno de sus campos? */
+
+/* variable --- direccion (base 100)
+   Nombre    -     100
+   identificador - 200
+   calidad_senal - 204
+   ptr_operador  - 212
+
+Nota: los offeset serian nombre: 0, identificador: 100, calidad_senal: 104, ptr_operador: 112, al estar en base 100 dan los resultados 
+de arriba
+*/

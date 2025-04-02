@@ -77,3 +77,24 @@ c_var.ptr_operador = op_ptr;
 
 //Punteros de c y op
 c_ptr->ptr_operador = op_ptr;
+
+/*Pregunta 12
+Supón ahora que la aplicación en la que se usan estas estructuras 
+necesita almacenar la información para un máximo de 10 celdas. 
+¿Qué estructura de datos definirías?
+
+-Si el numero de celdas es fijo podria usarse un arreglo*/
+struct c celdas[10];
+
+//Esto perime acceder a cada celda por su indice 
+celdas[0].ptr_operador = &op;
+
+
+
+/*Pregunta 13 
+Escribe un bucle con la variable declarada en el ejercicio anterior 
+que asigne al campo ptr_operador el valor vacío*/
+
+for (int i = 0; i < 10; i++) {
+    celdas[i].ptr_operador = NULL;
+}

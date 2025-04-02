@@ -82,3 +82,19 @@ struct informacion_celda c;                //  Declara una variable de tipo stru
 struct informacion_celda *c_ptr = &c;      //  Apunta el puntero c_ptr a la dirección de c
 struct informacion_celda d;                //  Declara una nueva variable de tipo struct informacion_celda
 struct informacion_celda *d_ptr = c_ptr;   //  Asigna c_ptr a d_ptr
+
+/*Pregunta 8
+Considera la siguiente declaración y asignación:*/
+struct informacion_celda c;
+struct informacion_celda *c_ptr;
+
+c_ptr = *c;
+/*¿Es correcta? Y si lo es, ¿Qué contiene la variable c_ptr (no se pregunta por lo que apunta, sino su contenido)?
+R = No es correcta la asignacion, si fuera correcta ("c_ptr = &c;") contendria la direccion 
+de memoria donde esta almacenada c
+
+/*Pregunta 9
+Si se declara una variable como “struct informacion_celda c;”, 
+¿qué tipo de datos es el que devuelve la expresión “&c.ptr_operador”?
+Respuesta = obtiene la direccion de memoria del puntero por lo que su tipo es
+struct informacion_operador ** 

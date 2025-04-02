@@ -98,3 +98,36 @@ que asigne al campo ptr_operador el valor vacío*/
 for (int i = 0; i < 10; i++) {
     celdas[i].ptr_operador = NULL;
 }
+
+/*Pregunta 14 
+La información sobre las celdas que se almacena en la estructura del ejercicio anterior 
+la debe utilizar la aplicación para recordar cuál de ellas es la más próxima. 
+Esta información puede cambiar a lo largo del tiempo. 
+¿Qué tipo de datos sugieres para almacenar esta información? Ofrece dos alternativas.  */
+
+/*
+Alternativa 1:
+Definir un puntero que almacena la direccion de la celda mas proxima*/
+
+struct c *celda_mas_proxima = NULL;
+//Para actualizar a la mas proxima 
+
+celda_mas_proxima = &celdas[indice];  // Donde 'indice' es la posición de la celda más próxima
+//Para acceder 
+if (celda_mas_proxima != NULL) {
+    printf("Celda más próxima tiene dato: %d\n", celda_mas_proxima->dato);
+}
+
+/*Alternativa 2:
+Definir una variable entera que almacene la posicion en el arreglo de la celda mas proxima*/
+
+int indice_mas_proximo = -1;  // -1 indica que no hay celda seleccionada aún
+
+//Para actualizar 
+indice_mas_proximo = 3;  // Si la celda más próxima está en celdas[3]
+
+//Para acceder 
+if (indice_mas_proximo != -1) {
+    printf("Celda más próxima tiene dato: %d\n", celdas[indice_mas_proximo].dato);
+}
+

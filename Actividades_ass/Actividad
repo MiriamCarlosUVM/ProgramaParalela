@@ -63,3 +63,22 @@ Si una variable de tipo struct informacion_celda* está almacenada en la posici�
 ¿qué dirección tiene cada uno de sus campos?
 R: Al tratarse de un puntero que solamente esta almacenado en la direccion 100 pero la estructura real esta en otro lugar de memoria 
 -- Ocuparia 8 bytes en la direccion 100-107    */
+
+
+/*Pregunta 6:
+¿Qué cambios debes hacer en las definiciones de la parte izquierda para que sean equivalentes a las descripciones de la parte derecha?
+
+struct informacion_celda c;                       // variable de tipo estructura informacion_celda
+struct informacion_celda **c_ptr;                 // puntero a estructura informacion_celda;
+
+struct informacion_celda c;                       // variable de tipo estructura informacion_celda
+struct informacion_celda *c_ptr;                 // puntero a estructura informacion_celda;
+*/
+
+/*Pregunta 7
+¿Se pueden hacer las siguientes asignaciones? ¿Qué declara exactamente la linea 3??*/
+
+struct informacion_celda c;                //  Declara una variable de tipo struct informacion_celda
+struct informacion_celda *c_ptr = &c;      //  Apunta el puntero c_ptr a la dirección de c
+struct informacion_celda d;                //  Declara una nueva variable de tipo struct informacion_celda
+struct informacion_celda *d_ptr = c_ptr;   //  Asigna c_ptr a d_ptr

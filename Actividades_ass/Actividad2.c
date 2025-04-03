@@ -239,3 +239,31 @@ cell_info *t[SIZE];
 //8 bytes en un sistema de 64 bits por lo que si el size sigue siendo 10 serian 
 // 80 bytes en total 
 //8 × 10= 80 bytes
+
+/*Pregunta 19
+Una aplicación de gestión de fotografías en tu móvil tiene definido el catálogo de fotos de la siguiente forma:
+La aplicación necesita crear una segunda tabla del mismo número de elementos, 
+pero en lugar de tener los datos de las fotos quiere tener los punteros a los datos de las fotos. En otras palabras, 
+es una tabla con idéntico número de elementos que la anterior, 
+pero sus elementos no son estructuras sino punteros a las correspondientes estructuras de la tabla pictures.  Escribe la declaración y el código para rellenar esa tabla */
+
+#define SIZE_NAME
+      
+struct picture_info 
+{
+    char name[SIZE_NAME];
+    int date_time;
+} pictures[SIZE];
+
+/*¿Qué tamaño tiene esta estructura de datos?
+R= Tenemos un array de tamaño SIZE_NAME que ocupa size_name bytes
+mas el entero de tamaño de 4 bytes, sumando un posible padding de 4 byts
+dando un total de = SIZE_NAME bytes + 4 bytes + 4 bytes */
+
+//Declaracion de la segunda tabla 
+struct picture_info *picture_ptrs [SIZE];
+
+//Llenamos la tabla 
+    for (int i = 0; i < SIZE; i++){
+        picture_ptrs[i] = &pictures[i];
+    }

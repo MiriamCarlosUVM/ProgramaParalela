@@ -131,3 +131,47 @@ if (indice_mas_proximo != -1) {
     printf("Celda más próxima tiene dato: %d\n", celdas[indice_mas_proximo].dato);
 }
 
+/*Pregunta 15 
+Se dispone de una estructura de tipo “info_celda c” que a su vez, en el campo “ptr_operador” tiene un puntero a una estructura 
+“info_operador cr”. 
+¿Qué tamaño tiene la estructura “c”? ¿Qué tamaño total ocupa la información incluyendo la información sobre el operador?*/
+
+//Es probable que se agreguen 4 bytes de padding, dejando el tamaño final en 16 bytes en 64 bits 
+
+struct info_operador {
+    int id;             // 4 bytes
+    char nombre[20];    // 20 bytes
+                        //4 padding
+};
+
+struct info_celda {
+    int dato;                               //   4 bytes
+    struct info_operador *ptr_operador;     //   8 bytes 
+                                            // 12 bytes totales 
+};
+
+/*¿Qué tamaño total ocupa la información incluyendo la información sobre el operador?
+ 44 bytes
+
+Si ptr_operador apunta a una instancia dinámica de info_operador, la memoria ocupada incluye ambas estructuras */
+
+/*
+Pregunta 16 
+Escribe el cuerpo de la siguiente función:
+
+void fill_in(info_celda_ptr dato, unsigned int id, float sq, info_operador_ptr op_ptr)
+
+que asigna el valor de los parámetros “id”, “sq” y “op_ptr” 
+a los campos “identificador”, “calidad_senal” y “ptr_operador” 
+respectivamente de la estructura apuntada por el parámetro “dato”.
+
+¿Cómo explicas que esta función asigne valores a unos campos y no devuelva resultado?*/
+
+void fill_in(info_celda_ptr dato, unsigned int id, float sq, info_operador_ptr op_ptr) {
+    dato->identificador = id;
+    dato->calidad_senal = sq;
+    dato->ptr_operador = op_ptr;
+}
+
+//La funcion no devvulve valor porque modifica direcamente la estructura apuntada por dato
+// La funcioon fill_in asigna valores a los campos sin necesidad de devolver un resultado

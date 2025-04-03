@@ -267,3 +267,37 @@ struct picture_info *picture_ptrs [SIZE];
     for (int i = 0; i < SIZE; i++){
         picture_ptrs[i] = &pictures[i];
     }
+
+/* Pregunta 20 
+Se dispone de la siguiente definición de datos: */
+#define SIZE 4
+struct coordinates 
+{
+    int latitude;
+    int longitude;
+} places[SIZE];
+
+places[0].latitude  = 200;
+places[0].longitude = 300;
+places[1].latitude  = 400;
+places[1].longitude = 100;
+places[2].latitude  = 100;
+places[2].longitude = 400;
+places[3].latitude  = 300;
+places[3].longitude = 200;
+/*La tabla almacena cuatro puntos obtenidos del GPS de tu móvil, cada uno de ellos con su latitud y longitud que son números enteros. 
+Hay una aplicación que ha obtenido estos puntos en este orden, pero necesita acceder a los datos de tres formas distintas.
+La primera es en el orden en que han sido obtenidos, y por tanto, tal y como está la tabla. 
+El segundo es ordenados crecientemente por latitud y el tercero ordenados crecientemente por longitud.
+El acceso a estos datos en base a estos tres órdenes es continuo. 
+Una primera solución podría ser reordenar los elementos de la tabla cada vez que se cambia de orden 
+(por ejemplo, llega una petición de datos ordenados por latitud, pero la anterior se ordenaron por longitud, y entonces se reordena la tabla).
+Pero es extremadamente ineficiente.
+¿Por qué? 
+
+Si constantemente cambiamos entre estos ordens, estaremos ordenando la tabla una y otra vez con un algoritmo de ordenacion para cada uno,
+ademas, si SIZE es grande, ordenar los datos cada vez que cambia la consulta consume tiempo
+
+¿Crees que utilizando punteros puedes ofrecer una alternativa más eficiente que evite reordenar los datos continuamente?*/
+
+

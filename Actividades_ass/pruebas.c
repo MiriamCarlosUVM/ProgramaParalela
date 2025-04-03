@@ -22,6 +22,7 @@ int main() {
     printf("identificador: %p\n", (void *)&ptr->identificador);
     printf("calidad_senal: %p\n", (void *)&ptr->calidad_senal);
     printf("ptr_operador:  %p\n", (void *)&ptr->ptr_operador);
+    printf("Hola mundo");
 
     return 0;
 }

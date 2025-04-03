@@ -175,3 +175,67 @@ void fill_in(info_celda_ptr dato, unsigned int id, float sq, info_operador_ptr o
 
 //La funcion no devvulve valor porque modifica direcamente la estructura apuntada por dato
 // La funcioon fill_in asigna valores a los campos sin necesidad de devolver un resultado
+
+/*
+Pregunta 17 
+La versión 1 del programa imprime el valor 10 por pantalla, y la versión 2 imprime el valor 20. Explica por qué.
+      version 1*/
+#include <stdio.h>
+struct package 
+{ 
+    int q; 
+};
+
+void set_value(struct package data, int value) 
+{
+    data.q = value;     // Se modifica la COPIA de la estructura, no la original
+}
+
+int main() 
+{
+    struct package p;
+    p.q = 10;
+    set_value(p, 20);
+    printf("Value = %d\n", p.q);
+    return 0;
+}
+
+/* En Versión 1, los cambios en set_value no afectan p.q porque trabaja con una copia.
+
+En Versión 2, los cambios sí afectan p.q porque se usa un puntero a la estructura original.*/
+
+//Version 2 
+#include <stdio.h>
+struct package 
+{ 
+    int q; 
+};
+
+void set_value(struct package *d_ptr, int value) 
+{
+    d_ptr->q = value;    // Se modifica directamente la estructura original
+}
+
+int main() 
+{
+    struct package p;
+    p.q = 10;
+    set_value(&p, 20);
+    printf("Value = %d\n", p.q);
+    return 0;
+}
+
+/*Pregunta 18 
+¿Qué cantidad de memoria ocupan estas dos estructuras? ¿Cuál es su diferencia?*/
+
+info_celda t[SIZE];
+//La memoria total ocupada depende del tamaño de info_celda y la cantidad de elementos SIZE
+//Si sizeof(info_celda) = 32 bytes y SIZE = 10, el array ocuparía:
+//32×10=320 bytes
+
+cell_info *t[SIZE];
+
+//Al ser un array de puntero a estructura, recordemos que los punteros valen 
+//8 bytes en un sistema de 64 bits por lo que si el size sigue siendo 10 serian 
+// 80 bytes en total 
+//8 × 10= 80 bytes

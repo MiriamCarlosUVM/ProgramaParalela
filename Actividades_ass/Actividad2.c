@@ -295,9 +295,12 @@ Una primera solución podría ser reordenar los elementos de la tabla cada vez q
 Pero es extremadamente ineficiente.
 ¿Por qué? 
 
-Si constantemente cambiamos entre estos ordens, estaremos ordenando la tabla una y otra vez con un algoritmo de ordenacion para cada uno,
+-Si constantemente cambiamos entre estos ordens, estaremos ordenando la tabla una y otra vez con un algoritmo de ordenacion para cada uno,
 ademas, si SIZE es grande, ordenar los datos cada vez que cambia la consulta consume tiempo
 
 ¿Crees que utilizando punteros puedes ofrecer una alternativa más eficiente que evite reordenar los datos continuamente?*/
+
+//Claro, en lugar de reordenar los datos originales se pueden crear aareglos de punteros que apunten a los elementos de places
+//cada uno ordenado segun el criterio deseado, asi solo ordenas los punteros una vez para cada criterio. Esto reduce procesamiento y evita copias
 
 

@@ -1,3 +1,17 @@
+/* Teniendo esto en cuenta, calculad la media entre los elementos de dos arrays. 
+Se pide para ello que imprimáis por pantalla los elementos de dos arrays y que calculéis e imprimáis la media entre cada par de elementos. 
+Para ello, cread en vuestro entorno de desarrollo un fichero llamado arrays_as_pointers.c, 
+e implementad en él lo siguiente (veréis que es el mismo programa que el de arrays básicos, pero ahora tendréis que enviar el array en forma de puntero):
+
+Una función que imprima por pantalla los elementos de un array de enteros: void print_array(int *array);
+
+Una segunda función que calcule la media entre cada par de elementos de un array y que la vaya imprimiendo por pantalla: 
+void calculate_average(int *array1, int *array2);. Para la primera posición de cada array,
+sumará los dígitos y los dividirá por dos, y ese resultado lo sacará por pantalla, y así con el resto de posiciones.
+
+Una función main que declare e inicialice dos arrays de 10 enteros  y que haga uso de la primera función para imprimir los arrays y de la segunda para calcular la media.*/
+
+
 #include <stdio.h>
 
 #define SIZE 10

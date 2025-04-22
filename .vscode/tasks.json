@@ -2,17 +2,18 @@
     "tasks": [
         {
             "type": "cppbuild",
-            "label": "C/C++: arrays_as_pointers.c build active file",
-            "command": "c:\\Users\\kmjs3\\ProgramaParalela\\ProgramaParalela\\Actividades_ass\\arrays_as_pointers.c",
+            "label": "C/C++: gcc.exe build active file",
+            "command": "C:/msys64/ucrt64/bin/gcc.exe",
             "args": [
                 "-fdiagnostics-color=always",
                 "-g",
                 "${file}",
                 "-o",
-                "${fileDirname}\\${fileBasenameNoExtension}.exe"
+                "${fileDirname}\\${fileBasenameNoExtension}.exe",
+                ""
             ],
             "options": {
-                "cwd": "c:\\Users\\kmjs3\\ProgramaParalela\\ProgramaParalela\\Actividades_ass"
+                "cwd": "C:/msys64/ucrt64/bin"
             },
             "problemMatcher": [
                 "$gcc"

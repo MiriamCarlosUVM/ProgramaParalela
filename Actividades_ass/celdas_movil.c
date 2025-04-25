@@ -20,7 +20,7 @@ Cell* new_cell() {
     return (Cell*)malloc(sizeof(Cell));
 }
 
-/* Función remove_cell 
+/* Función remove_cell ts
    Libera la memoria de una celda */
 void remove_cell(Cell* cell) {
     free(cell);

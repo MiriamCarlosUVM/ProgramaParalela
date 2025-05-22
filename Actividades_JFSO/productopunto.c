@@ -2,15 +2,18 @@
 #include "stdlib.h"
 #include "omp.h"
 
-int arreglo1 [10];
-int arreglo2 [10];
+#define MILLION 1000000
+
+int arreglo1 [MILLION];
+int arreglo2 [MILLION];
  
 void aumentar(){
-for (int i = 0; i<10; i++) {
+for (int i = 0; i<MILLION; i++) {
  
 arreglo1 [i] = 1;
  
-arreglo2 [i] = 2;
+arreglo2 [i] = 1;
+
 }
 }
 int main(){
@@ -22,7 +25,7 @@ int main(){
 {
 
     #pragma omp for reduction(+:sum)
-    for (int i = 0; i<10; i++){
+    for (int i = 0; i<MILLION; i++){
  
    sum += arreglo1 [i] * arreglo2 [i];
  

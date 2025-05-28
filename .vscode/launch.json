@@ -9,7 +9,7 @@
       "stopAtEntry": false,
       "externalConsole": true,
       "cwd": "c:/Users/kmjs3/ProgramaParalela/ProgramaParalela/Actividades_ass",
-      "program": "c:/Users/kmjs3/ProgramaParalela/ProgramaParalela/Actividades_ass/build/Debug/outDebug",
+      "program": "c:/Users/kmjs3/ProgramaParalela/ProgramaParalela/",
       "MIMode": "gdb",
       "miDebuggerPath": "gdb",
       "setupCommands": [

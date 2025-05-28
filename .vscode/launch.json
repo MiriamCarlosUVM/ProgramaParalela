@@ -2,16 +2,22 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "C/C++ Runner: Debug Session",
+      "name": "C++ Launch",
       "type": "cppdbg",
       "request": "launch",
+      "program": "${workspaceFolder}/hola.exe",
       "args": [],
       "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
       "externalConsole": true,
+<<<<<<< HEAD
       "cwd": "c:/Users/kmjs3/ProgramaParalela/ProgramaParalela/Actividades_ass",
       "program": "c:/Users/kmjs3/ProgramaParalela/ProgramaParalela/",
+=======
+>>>>>>> b07c25c51eeb4033474a2ab6dbc454d2d6c2184e
       "MIMode": "gdb",
-      "miDebuggerPath": "gdb",
+      "miDebuggerPath": "C:/MinGW/bin/gdb.exe",
       "setupCommands": [
         {
           "description": "Enable pretty-printing for gdb",

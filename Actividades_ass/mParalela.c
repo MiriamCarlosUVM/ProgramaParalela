@@ -34,7 +34,7 @@ int main() {
 
     printf("\nMatriz C (A x B)  paralela:\n");
     
-    // Paralelización 
+    // Paralelizacion 
     #pragma omp parallel for private(j, k) shared(A, B, C, n, p, m)
     for (i = 0; i < n; i++) {
         for (j = 0; j < p; j++) {

@@ -23,7 +23,7 @@ int main() {
         printf("\n");
     }
 
-    // Inicialización de la matriz B
+    // Inicializacion de la matriz B
     printf("\nMatriz B:\n");
     c = 1; 
     for (i = 0; i < m; i++) {
@@ -47,15 +47,15 @@ int main() {
         printf("\n");
     }
     
-    // Medición de tiempo final
+    // Medicion de tiempo final
     clock_t end_time = clock();
     
     // tiempo transcurrido total
     double cpu_time_used = ((double) (end_time - start_time)) / CLOCKS_PER_SEC;
     
-    printf("\nTiempo de ejecución total secuencial: %f segundos\n", cpu_time_used);
+    printf("\nTiempo de ejecucion total secuencial: %f segundos\n", cpu_time_used);
     printf("Tiempo en microsegundos: %f\n", cpu_time_used * 1000000);
-    printf("Número de hilos utilizados: 1\n");
+    printf("Numero de hilos utilizados: 1\n");
 
     return 0;
 }

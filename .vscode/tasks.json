@@ -21,9 +21,10 @@
 >>>>>>> fcf331506bf7cb3c3ef79a33d90d488188be0312
             "type": "cppbuild",
             "label": "C/C++: gcc.exe build active file",
-            "command": "C:\\MinGW\\bin\\gcc.exe",
+            "command": "C:/msys64/ucrt64/bin/gcc.exe",
             "args": [
                 "-fdiagnostics-color=always",
+<<<<<<< HEAD
 <<<<<<< HEAD
                 "-g",
                 "${file}",
@@ -31,14 +32,20 @@
                 "${fileDirname}\\${fileBasenameNoExtension}.exe"
 =======
                 "-fopenmp",
+=======
+>>>>>>> 1dd7436469b5983e1d9227e0412f6ae8e5dd2a47
                 "-g",
                 "${file}",
                 "-o",
                 "${fileDirname}\\${fileBasenameNoExtension}.exe",
+<<<<<<< HEAD
 >>>>>>> fcf331506bf7cb3c3ef79a33d90d488188be0312
+=======
+                ""
+>>>>>>> 1dd7436469b5983e1d9227e0412f6ae8e5dd2a47
             ],
             "options": {
-                "cwd": "${fileDirname}"
+                "cwd": "C:/msys64/ucrt64/bin"
             },
             "problemMatcher": [
                 "$gcc"

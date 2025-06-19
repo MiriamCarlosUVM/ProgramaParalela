@@ -6,14 +6,13 @@
             "type": "shell",
             "command": "gcc",
             "args": [
-                "-fdiagnostics-color=always",
                 "-g",
                 "${file}",
                 "-o",
-                "${workspaceFolder}/bin/${fileBasenameNoExtension}.exe"
+                "${workspaceFolder}\\bin\\${fileBasenameNoExtension}.exe"
             ],
             "options": {
-                "cwd": "${workspaceFolder"
+                "cwd": "${workspaceFolder}"
             },
             "problemMatcher": ["$gcc"],
             "group": {

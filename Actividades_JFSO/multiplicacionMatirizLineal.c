@@ -1,7 +1,7 @@
 #include "stdlib.h"
 #include "stdio.h"
 
-#define N 100
+#define N 200
 
 int i = 0;
 int j = 0;

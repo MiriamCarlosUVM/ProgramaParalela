@@ -1,0 +1,36 @@
+Supuestos iniciales (definir como sera):
+
+    --Los coches entran en tiempos aleatorios (o definidos).
+
+    --Cada coche tarda un tiempo fijo o aleatorio en recorrer la calle (de metro 0 a 10).
+
+    --No hay adelantamientos, es decir: si un coche tarda en salir, los siguientes deben esperar (si se quiere incluir bloqueo).
+
+    --Cada entrada es un evento tipo ENTRADA, y cuando el coche llega al metro 10, se genera un evento tipo SALIDA.
+
+    Eventos posibles: #define entrada 0, salida 1
+
+
+
+Pseudocodigo 
+
+        Inicializar reloj = 0
+Inicializar cola de eventos con el primer evento de ENTRADA
+
+Mientras haya eventos:
+    evento_actual = sacar_evento_mas_cercano()
+    reloj = evento_actual.tiempo
+
+    Si evento_actual es ENTRADA:
+        Imprimir "Coche X entra en el tiempo T"
+        Calcular tiempo de recorrido (por ejemplo, 5s fijos o aleatorios)
+        Crear evento SALIDA para ese coche en T + tiempo_recorrido
+        Insertar ese evento en la cola
+
+        Si aún hay autos por entrar:
+            Calcular siguiente llegada
+            Crear evento ENTRADA
+            Insertar en cola
+
+    Si evento_actual es SALIDA:
+        Imprimir "Coche X sale en el tiempo T"

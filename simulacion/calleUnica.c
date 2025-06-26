@@ -6,31 +6,31 @@
 #define MAX_EVENTOS 100
 
 typedef struct {
-    double tiempo;
-    int tipo;
-    int id_auto;
+    double tiempo;   // Momento en el que ocurre el evento en segundos
+    int tipo;        // entrada(0) o salida(1)
+    int id_auto;     
 } Evento;
 
 typedef struct {
-    Evento eventos[MAX_EVENTOS];
-    int cantidad;
+    Evento eventos[MAX_EVENTOS];  //areglo para almacenar eventos
+    int cantidad_eventos;         // Numero actual de eventos en cola
 } ColaEventos;
 
 ColaEventos cola;
 
-// Inserta ordenadamente por tiempo
+// Inserta ordenadamente por tiempo de < a > (FIFO)
 void insertar_evento(Evento e) {
-    int i = cola.cantidad - 1;
+    int i = cola.cantidad_eventos - 1;  // apunta al ultimo evento existente
     while (i >= 0 && cola.eventos[i].tiempo > e.tiempo) {
         cola.eventos[i + 1] = cola.eventos[i];
         i--;
     }
     cola.eventos[i + 1] = e;
-    cola.cantidad++;
+    cola.cantidad_eventos++;
 }
 
 Evento obtener_siguiente_evento() {
-    return cola.eventos[--cola.cantidad];
+    return cola.eventos[--cola.cantidad_eventos];
 }
 
 double generar_tiempo_entre_llegadas() {
@@ -44,7 +44,7 @@ double generar_tiempo_de_salida() {
 int main() {
     double reloj = 0.0;
     int id = 1;
-    cola.cantidad = 0;
+    cola.cantidad_eventos = 0;
 
     // Primer evento de entrada
     Evento e;
@@ -53,7 +53,7 @@ int main() {
     e.id_auto = id++;
     insertar_evento(e);
 
-    while (cola.cantidad > 0) {
+    while (cola.cantidad_eventos > 0) {
         Evento actual = obtener_siguiente_evento();
         reloj = actual.tiempo;
 

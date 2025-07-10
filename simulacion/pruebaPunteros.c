@@ -10,7 +10,7 @@
 #define LONGITUD_CALLE 100  // metros
 #define NUM_SECCIONES 10    // número de secciones
 #define LONGITUD_SECCION (LONGITUD_CALLE / NUM_SECCIONES)  // 10 metros por sección
-#define MAX_AUTOS 100       // máximo número de autos en el sistema
+#define MAX_AUTOS 50       // máximo número de autos en el sistema
 
 // Estados posibles de un auto
 typedef enum {
@@ -396,7 +396,7 @@ int main() {
 
     int eventos_procesados = 0;
     
-    while (!cola_vacia(&cola) && eventos_procesados < 100) {
+    while (!cola_vacia(&cola)) {
         Evento* evento_actual = obtener_siguiente_evento(&cola);
         if (evento_actual == NULL) break;
         

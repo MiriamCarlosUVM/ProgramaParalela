@@ -84,9 +84,9 @@ void inicializar_calle(EstadoCalle* calle) {
     calle->autos_completados = 0;
 }
 
-// Inicializa el sistema de autos
+// Inicializa el sistema de autos con todos los contadores en 0
 void inicializar_sistema_autos(SistemaAutos* sistema) {
-    for (int i = 0; i < MAX_AUTOS; i++) {
+    for (int i = 0; i < MAX_AUTOS; i++) { //recorre cada posicion del arreglo autos
         sistema->autos[i].id = 0;
         sistema->autos[i].seccion_actual = -1;
         sistema->autos[i].estado = AUTO_ESPERANDO_ENTRADA;
@@ -99,12 +99,12 @@ void inicializar_sistema_autos(SistemaAutos* sistema) {
     sistema->num_autos_activos = 0;
 }
 
-// Crea un nuevo auto en el sistema
+// Crea un nuevo auto en el sistema sin que se creen mas de los permitidos
 Auto* crear_auto(SistemaAutos* sistema, int id) {
     if (sistema->num_autos_creados >= MAX_AUTOS) {
         return NULL;
     }
-    
+    // Datos iniciales 
     Auto* auto_nuevo = &sistema->autos[sistema->num_autos_creados];
     auto_nuevo->id = id;
     auto_nuevo->seccion_actual = -1;
@@ -234,7 +234,7 @@ double generar_tiempo_avance_seccion() {
     return 1.0 + ((double)rand() / RAND_MAX) * 1.0;
 }
 
-// Crea un evento
+// Crea un evento con sus caracteristicas
 Evento crear_evento(double tiempo, int tipo, int id_auto, int seccion) {
     Evento evento;
     evento.tiempo = tiempo;
@@ -261,7 +261,8 @@ void ocupar_seccion(EstadoCalle* calle, SistemaAutos* sistema, int seccion, int 
     }
 }
 
-// Libera una sección (actualiza tanto calle como auto)
+// Libera una sección (actualiza tanto calle como auto, esto se ejecuta cuando un auto avanza o sale de la calle)
+// -Quitando el id del auto en la seccion actual y para dejarla libre (0)
 void liberar_seccion(EstadoCalle* calle, SistemaAutos* sistema, int seccion) {
     int id_auto = calle->ocupada[seccion];
     calle->ocupada[seccion] = 0;
@@ -308,7 +309,9 @@ void registrar_salida_auto(SistemaAutos* sistema, EstadoCalle* calle, int id_aut
     }
 }
 
-// Convierte estado de auto a string
+// Convertir los estados y los tipos a string ayudan para una mejor visualizacion
+
+// Convierte estado de auto a string 
 const char* estado_auto_a_string(EstadoAuto estado) {
     switch (estado) {
         case AUTO_ESPERANDO_ENTRADA: return "ESPERANDO_ENTRADA";
@@ -329,7 +332,7 @@ const char* tipo_evento_a_string(int tipo) {
     }
 }
 
-// Imprime información detallada de un auto
+// Imprime información detallada de un auto buscando su id 
 void imprimir_info_auto(SistemaAutos* sistema, int id_auto) {
     Auto* auto_ptr = buscar_auto_por_id(sistema, id_auto);
     if (auto_ptr != NULL) {
@@ -341,7 +344,7 @@ void imprimir_info_auto(SistemaAutos* sistema, int id_auto) {
     }
 }
 
-// Imprime el estado completo del sistema
+// Imprime el estado completo del sistema (sirve como una fotografia del sistema en un instante)
 void imprimir_estado_sistema(EstadoCalle* calle, SistemaAutos* sistema, double tiempo) {
     printf("\n=== ESTADO DEL SISTEMA EN t=%.2f ===\n", tiempo);
     
@@ -371,7 +374,7 @@ void imprimir_estado_sistema(EstadoCalle* calle, SistemaAutos* sistema, double t
 }
 
 int main() {
-    srand((unsigned int)time(NULL));
+    srand((unsigned int)time(NULL));  //inicializa la semilla para generar numeros aleatorios (tiempo llegada - avances)
     
     ColaEventos cola;
     EstadoCalle calle;
@@ -396,6 +399,13 @@ int main() {
 
     int eventos_procesados = 0;
     
+
+    /* Bucle principal de la simulación:
+ - Procesa eventos uno a uno en orden temporal
+ - Actualiza estado del sistema según el tipo de evento
+ - Programa nuevos eventos si es necesario
+    */ 
+
     while (!cola_vacia(&cola)) {
         Evento* evento_actual = obtener_siguiente_evento(&cola);
         if (evento_actual == NULL) break;
@@ -407,7 +417,7 @@ int main() {
                eventos_procesados + 1, evento_actual->id_auto, 
                tipo_evento_a_string(evento_actual->tipo), reloj);
 
-        if (evento_actual->tipo == ENTRADA) {
+        if (evento_actual->tipo == ENTRADA) {  //si la primera seccion esta libre. el auto entra, si no se reintenta mas tarde
             if (seccion_libre(&calle, 0)) {
                 ocupar_seccion(&calle, &sistema, 0, evento_actual->id_auto, reloj);
                 registrar_entrada_auto(&sistema, &calle, evento_actual->id_auto, reloj);
@@ -435,7 +445,7 @@ int main() {
                 insertar_evento(&cola, reintento);
             }
 
-        } else if (evento_actual->tipo == AVANCE) {
+        } else if (evento_actual->tipo == AVANCE) { // el auto intenta moverse si esta dispobible, avanaza y se programa el siguiente evento, si no, se reprograma para despues
             int seccion_actual = auto_ptr ? auto_ptr->seccion_actual : -1;
             int seccion_destino = evento_actual->seccion;
             
@@ -457,7 +467,7 @@ int main() {
                     
                     printf("  → Auto %d AVANZA a sección %d\n", evento_actual->id_auto, seccion_destino);
                     
-                    // Programar siguiente avance
+                    // Programar siguiente avance 
                     double tiempo_siguiente = reloj + generar_tiempo_avance_seccion();
                     Evento siguiente = crear_evento(tiempo_siguiente, AVANCE, 
                                                    evento_actual->id_auto, seccion_destino + 1);

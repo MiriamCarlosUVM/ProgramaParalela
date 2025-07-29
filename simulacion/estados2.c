@@ -14,14 +14,14 @@
 #define ACTUALIZACION_VEHICULO 2  // Actualizar posición y estado de un vehículo
 
 // Parámetros de la calle y simulación
-#define NUM_SECCIONES 10       // Número de secciones en que se divide la calle
+#define NUM_SECCIONES 100       // Número de secciones en que se divide la calle
 #define LONGITUD_SECCION 10.0  // Longitud de cada sección en metros
-#define LONGITUD_TOTAL 100.0   // Longitud total de la calle en metros
+#define LONGITUD_TOTAL 1000.0   // Longitud total de la calle en metros
 
-#define POSICION_SEMAFORO 100.0 // Posición del semáforo en metros desde el inicio
+#define POSICION_SEMAFORO 800.0 // Posición del semáforo en metros desde el inicio
 
 #define PASO_SIMULACION 0.1    // Intervalo de tiempo entre actualizaciones (segundos)
-#define MAX_AUTOS 10          // Número máximo de autos a simular
+#define MAX_AUTOS 100          // Número máximo de autos a simular
 
 // ============================================================================
 // ENUMERACIONES - ESTADOS DEL SISTEMA
@@ -138,20 +138,58 @@ SemaforoControl semaforo = {0.0, VERDE};
 // ============================================================================
 
 // Encuentra el vehículo más cercano por delante de la posición dada
+// Encuentra el vehículo más cercano por delante de la posición dada (versión segura)
+// Encuentra el vehículo más cercano por delante de la posición dada (versión segura)
 Vehiculo* encontrar_vehiculo_adelante(double posicion, Vehiculo* vehiculo_actual) {
+    // Validación de entrada
+    if (vehiculo_actual == NULL) {
+        printf("ERROR: vehiculo_actual es NULL en encontrar_vehiculo_adelante\n");
+        return NULL;
+    }
+    
+    // En lugar de fallar, corregir posiciones fuera de rango
+    if (posicion < 0.0) {
+        printf("ADVERTENCIA: posicion negativa corregida: %.2f -> 0.0\n", posicion);
+        posicion = 0.0;
+    } else if (posicion > LONGITUD_TOTAL) {
+        printf("ADVERTENCIA: posicion excesiva corregida: %.2f -> %.2f\n", posicion, LONGITUD_TOTAL);
+        posicion = LONGITUD_TOTAL;
+    }
+    
+    
     Vehiculo* mas_cercano = NULL;
     double distancia_minima = LONGITUD_TOTAL;
+    
+    // Validar que el array de vehículos activos no esté corrupto
+    if (calle.num_vehiculos_activos < 0 || calle.num_vehiculos_activos > MAX_AUTOS) {
+        printf("ERROR: num_vehiculos_activos fuera de rango: %d\n", calle.num_vehiculos_activos);
+        return NULL;
+    }
     
     for (int i = 0; i < calle.num_vehiculos_activos; i++) {
         Vehiculo* v = calle.vehiculos_activos[i];
         
+        // Validación crítica: verificar que el puntero no sea NULL
+        if (v == NULL) {
+            printf("ERROR: vehiculo en posicion %d es NULL\n", i);
+            continue; // Saltar este vehículo y continuar
+        }
+        
         // No comparar consigo mismo
         if (v == vehiculo_actual) continue;
+        
+        // Validar que la posición del vehículo sea coherente
+        if (v->posicion < 0.0 || v->posicion > LONGITUD_TOTAL) {
+            printf("ADVERTENCIA: Vehiculo %d tiene posicion invalida: %.2f\n", v->id, v->posicion);
+            continue;
+        }
         
         // Solo considerar vehículos que están adelante
         if (v->posicion > posicion) {
             double distancia = v->posicion - posicion;
-            if (distancia < distancia_minima) {
+            
+            // Validación adicional: la distancia debe ser positiva y razonable
+            if (distancia > 0.0 && distancia < distancia_minima) {
                 distancia_minima = distancia;
                 mas_cercano = v;
             }
@@ -171,6 +209,22 @@ double calcular_distancia_seguridad(double velocidad) {
 
 // Verifica si un vehículo puede ocupar una posición sin colisionar
 int puede_avanzar_sin_colision(Vehiculo* vehiculo, double nueva_posicion) {
+    // Validaciones de entrada
+    if (vehiculo == NULL) {
+        printf("ERROR: vehiculo es NULL en puede_avanzar_sin_colision\n");
+        return 0; // No puede avanzar si hay error
+    }
+    
+    // Corregir nueva_posicion si está fuera de rango
+    if (nueva_posicion < 0.0) {
+        printf("ADVERTENCIA: nueva_posicion negativa corregida para vehiculo %d: %.2f -> 0.0\n", 
+               vehiculo->id, nueva_posicion);
+        nueva_posicion = 0.0;
+    } else if (nueva_posicion > LONGITUD_TOTAL) {
+        // Si intenta ir más allá del final, permitir (el vehículo saldrá del sistema)
+        return 1;
+    }
+    
     Vehiculo* adelante = encontrar_vehiculo_adelante(vehiculo->posicion, vehiculo);
     
     if (!adelante) return 1; // No hay vehículo adelante
@@ -179,17 +233,107 @@ int puede_avanzar_sin_colision(Vehiculo* vehiculo, double nueva_posicion) {
     double distancia_resultante = adelante->posicion - nueva_posicion - params.longitud_vehiculo;
     double distancia_requerida = calcular_distancia_seguridad(vehiculo->velocidad);
     
+    // Validar que las distancias sean coherentes
+    if (distancia_resultante < 0.0) {
+        printf("DEBUG: Vehiculo %d tendría colisión con %d (dist resultante: %.2f)\n", 
+               vehiculo->id, adelante->id, distancia_resultante);
+        return 0;
+    }
+    
     return distancia_resultante >= distancia_requerida;
 }
 
+
 // Ajusta la velocidad y aceleración para evitar colisiones
+double calcular_distancia_seguridad(double velocidad) {
+    // Validar velocidad de entrada
+    if (velocidad < 0.0) {
+        printf("ADVERTENCIA: velocidad negativa en calcular_distancia_seguridad: %.2f\n", velocidad);
+        velocidad = 0.0;
+    } else if (velocidad > params.velocidad_maxima * 2.0) {
+        printf("ADVERTENCIA: velocidad excesiva en calcular_distancia_seguridad: %.2f\n", velocidad);
+        velocidad = params.velocidad_maxima;
+    }
+    
+    // Distancia de seguridad = distancia mínima + tiempo de reacción * velocidad + margen de frenado
+    double distancia_reaccion = velocidad * params.tiempo_reaccion;
+    double distancia_frenado = (velocidad * velocidad) / (2.0 * fabs(params.desaceleracion_maxima));
+    return params.distancia_seguridad_min + distancia_reaccion + distancia_frenado * 0.5;
+}
+
+// Función para corregir posiciones inválidas de vehículos
+void corregir_posicion_vehiculo(Vehiculo* v) {
+    if (v == NULL) return;
+    
+    int corregido = 0;
+    
+    if (v->posicion < 0.0) {
+        printf("CORRIGIENDO: Vehiculo %d posicion negativa %.2f -> 0.0\n", v->id, v->posicion);
+        v->posicion = 0.0;
+        v->velocidad = 0.0; // Detener el vehículo si está en posición inválida
+        v->estado = DETENIDO;
+        corregido = 1;
+    }
+    
+    // No corregir si está más allá del final (el vehículo saldrá del sistema)
+    if (v->posicion > LONGITUD_TOTAL && v->estado != SALIENDO) {
+        printf("INFO: Vehiculo %d ha pasado el final (pos: %.2f) - marcando como SALIENDO\n", 
+               v->id, v->posicion);
+        v->estado = SALIENDO;
+        v->tiempo_salida = calle.tiempo_actual;
+    }
+    
+    if (v->velocidad < 0.0) {
+        printf("CORRIGIENDO: Vehiculo %d velocidad negativa %.2f -> 0.0\n", v->id, v->velocidad);
+        v->velocidad = 0.0;
+        corregido = 1;
+    }
+    
+    if (v->velocidad > params.velocidad_maxima * 1.5) {
+        printf("CORRIGIENDO: Vehiculo %d velocidad excesiva %.2f -> %.2f\n", 
+               v->id, v->velocidad, params.velocidad_maxima);
+        v->velocidad = params.velocidad_maxima;
+        corregido = 1;
+    }
+    
+    if (corregido) {
+        printf("DEBUG: Estado corregido del vehiculo %d - pos: %.2f, vel: %.2f, estado: %s\n",
+               v->id, v->posicion, v->velocidad, estado_str(v->estado));
+    }
+}
+
 void ajustar_por_trafico(Vehiculo* vehiculo, double dt) {
+    // Validación de entrada
+    if (vehiculo == NULL) {
+        printf("ERROR: vehiculo es NULL en ajustar_por_trafico\n");
+        return;
+    }
+    
+    if (dt <= 0.0) {
+        printf("ERROR: dt inválido en ajustar_por_trafico: %.6f\n", dt);
+        return;
+    }
+    
     Vehiculo* adelante = encontrar_vehiculo_adelante(vehiculo->posicion, vehiculo);
     
     if (!adelante) return; // No hay vehículo adelante
     
+    // Validación adicional del vehículo de adelante
+    if (adelante->posicion <= vehiculo->posicion) {
+        printf("ADVERTENCIA: Vehiculo adelante (ID:%d, pos:%.2f) está detrás del actual (ID:%d, pos:%.2f)\n", 
+               adelante->id, adelante->posicion, vehiculo->id, vehiculo->posicion);
+        return;
+    }
+    
     double distancia_actual = adelante->posicion - vehiculo->posicion - params.longitud_vehiculo;
     double distancia_requerida = calcular_distancia_seguridad(vehiculo->velocidad);
+    
+    // Validar que las distancias sean coherentes
+    if (distancia_actual < 0.0) {
+        printf("ERROR: Distancia negativa detectada entre vehiculos %d y %d: %.2f\n", 
+               vehiculo->id, adelante->id, distancia_actual);
+        return;
+    }
     
     // Si la distancia es crítica, frenar
     if (distancia_actual <= distancia_requerida) {
@@ -198,8 +342,8 @@ void ajustar_por_trafico(Vehiculo* vehiculo, double dt) {
             // Frenado de emergencia
             vehiculo->estado = FRENANDO;
             vehiculo->aceleracion = params.desaceleracion_maxima;
-            printf("[%.2f] Vehiculo %d: FRENADO EMERGENCIA (dist: %.2fm)\n", 
-                   calle.tiempo_actual, vehiculo->id, distancia_actual);
+            printf("[%.2f] Vehiculo %d: FRENADO EMERGENCIA (dist: %.2fm a ID:%d)\n", 
+                   calle.tiempo_actual, vehiculo->id, distancia_actual, adelante->id);
         } else {
             // Ajustar velocidad al vehículo de adelante
             double velocidad_objetivo = adelante->velocidad * 0.9; // Un poco más lento
@@ -210,6 +354,7 @@ void ajustar_por_trafico(Vehiculo* vehiculo, double dt) {
         }
     }
 }
+
 
 // ============================================================================
 // FUNCIONES DE CONTROL DEL SEMÁFORO
@@ -260,25 +405,91 @@ const char* color_semaforo(EstadoSemaforo e) {
     }
 }
 
-// Imprime el estado actual de todos los vehículos en la calle
+// Imprime el estado completo de la simulación en una sola tabla con formato simple
 void imprimir_estado_calle_extendido() {
-    printf("\n=== ESTADO t=%.2f | Semaforo: %s ===\n", 
+    printf("\n==== ESTADO DE LA SIMULACION t=%.2f | Semaforo: %s ====\n", 
            calle.tiempo_actual, color_semaforo(semaforo.estado));
+    
+    // Si no hay vehículos activos, mostrar mensaje
+    if (calle.num_vehiculos_activos == 0) {
+        printf("No hay vehículos activos en la calle.\n\n");
+        return;
+    }
+    
+    // Encabezado de la tabla
+    printf("ID | Posicion | Velocidad | Aceleracion |    Estado    | Dist Adelante | Tiempo Estado | Observaciones\n");
+    printf("---|----------|-----------|-------------|--------------|---------------|---------------|----------------\n");
+    
+    // Variables para estadísticas
+    double vel_promedio = 0.0;
+    int vehiculos_detenidos = 0;
+    int vehiculos_antes_semaforo = 0;
     
     // Itera sobre todos los vehículos activos y muestra su información
     for (int i = 0; i < calle.num_vehiculos_activos; i++) {
         Vehiculo* v = calle.vehiculos_activos[i];
         Vehiculo* adelante = encontrar_vehiculo_adelante(v->posicion, v);
-        double distancia = adelante ? (adelante->posicion - v->posicion - params.longitud_vehiculo) : -1;
         
-        printf("ID:%2d Pos=%.1fm Vel=%.2fm/s Acel=%.2f Estado=%s", 
-               v->id, v->posicion, v->velocidad, v->aceleracion, estado_str(v->estado));
-        
+        // Calcular distancia al vehículo de adelante
+        char dist_str[15];
         if (adelante) {
-            printf(" [Dist a ID%d: %.1fm]", adelante->id, distancia);
+            double distancia = adelante->posicion - v->posicion - params.longitud_vehiculo;
+            snprintf(dist_str, sizeof(dist_str), "%.1fm (ID:%d)", distancia, adelante->id);
+        } else {
+            strcpy(dist_str, "N/A");
         }
-        printf("\n");
+        
+        // Tiempo en estado actual (simplificado)
+        double tiempo_en_estado = calle.tiempo_actual - v->tiempo_entrada;
+        
+        // Generar observaciones basadas en el contexto
+        char observaciones[17];
+        if (v->posicion >= POSICION_SEMAFORO - 5.0 && v->posicion < POSICION_SEMAFORO) {
+            if (semaforo.estado == ROJO) {
+                strcpy(observaciones, "Esp.Semaf.Rojo");
+            } else if (semaforo.estado == AMARILLO) {
+                strcpy(observaciones, "Cerca Amarillo");
+            } else {
+                strcpy(observaciones, "Pasando Verde");
+            }
+        } else if (v->posicion < 10.0) {
+            strcpy(observaciones, "Zona Entrada");
+        } else if (v->posicion > POSICION_SEMAFORO) {
+            strcpy(observaciones, "Post Semaforo");
+        } else if (adelante && (adelante->posicion - v->posicion - params.longitud_vehiculo) < 10.0) {
+            strcpy(observaciones, "Siguiendo Auto");
+        } else {
+            strcpy(observaciones, "Circ Normal");
+        }
+        
+        // Imprimir fila de la tabla
+        printf("%2d |   %6.1f |     %5.2f |       %5.2f | %-12s |   %-11s |       %6.1f | %s\n", 
+               v->id, 
+               v->posicion, 
+               v->velocidad, 
+               v->aceleracion, 
+               estado_str(v->estado),
+               dist_str,
+               tiempo_en_estado,
+               observaciones);
+        
+        // Actualizar estadísticas
+        vel_promedio += v->velocidad;
+        if (v->velocidad == 0.0) vehiculos_detenidos++;
+        if (v->posicion < POSICION_SEMAFORO) vehiculos_antes_semaforo++;
     }
+    
+    // Calcular velocidad promedio
+    if (calle.num_vehiculos_activos > 0) {
+        vel_promedio /= calle.num_vehiculos_activos;
+    }
+    
+    // Línea separadora y estadísticas
+    printf("---|----------|-----------|-------------|--------------|---------------|---------------|----------------\n");
+    printf("ESTADISTICAS: Vehiculos Activos: %2d | Vel Promedio: %5.2f m/s | Detenidos: %2d | Antes Semaforo: %2d\n",
+           calle.num_vehiculos_activos, vel_promedio, vehiculos_detenidos, vehiculos_antes_semaforo);
+    printf("Parametros: Vel Max: %.2f m/s | Pos Semaforo: %.0fm | Ciclo: Verde:%gs Amarillo:%gs Rojo:%gs\n",
+           params.velocidad_maxima, POSICION_SEMAFORO, duracion_verde, duracion_amarillo, duracion_rojo);
     printf("\n");
 }
 
@@ -448,6 +659,9 @@ void procesar_eventos() {
                 Vehiculo* v = (Vehiculo*)malloc(sizeof(Vehiculo));
                 memset(v, 0, sizeof(Vehiculo));  // Inicializar todos los campos a 0
                 
+                printf("CREANDO: Vehiculo %d inicializado - pos: %.6f, vel: %.6f, acel: %.6f\n",
+                        v->id, v->posicion, v->velocidad, v->aceleracion);
+
                 // Configurar propiedades iniciales del vehículo
                 v->id = id_auto;
                 v->estado = ENTRANDO;
@@ -611,14 +825,26 @@ void procesar_eventos() {
                 nueva_velocidad = 0.0;
             }
 
+            if (v->posicion < 0.0) {
+            printf("ERROR PRE-UPDATE: Vehiculo %d ya tiene posicion negativa: %.6f\n", 
+            v->id, v->posicion);
+
             // Calcular nueva posición
             double nueva_posicion = v->posicion + nueva_velocidad * dt;
             
+            if (nueva_posicion < 0.0) {
+            printf("ERROR POST-UPDATE: Vehiculo %d - pos_anterior: %.6f, velocidad: %.6f, dt: %.6f, nueva_pos: %.6f\n",
+            v->id, v->posicion, nueva_velocidad, dt, nueva_posicion);
+            }
+
+
             // Verificar si puede avanzar sin colisionar
             if (puede_avanzar_sin_colision(v, nueva_posicion)) {
                 // Actualizar posición y velocidad
                 v->velocidad = nueva_velocidad;
                 v->posicion = nueva_posicion;
+                corregir_posicion_vehiculo(v);
+
             } else {
                 // No puede avanzar, detenerse
                 v->velocidad = 0.0;

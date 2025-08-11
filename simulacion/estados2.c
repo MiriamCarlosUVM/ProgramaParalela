@@ -30,14 +30,14 @@ ConfiguracionSimulacion config = {
     .longitud_seccion = 10.0,
     .longitud_total = 200.0,
     .posicion_semaforo = 150.0,
-    .paso_simulacion = 0.1,
+    .paso_simulacion = 0.05,
     .max_autos = 50,
     .intervalo_entrada_vehiculos = 2.0,
-    .tiempo_limite_simulacion = 3000.0
+    .tiempo_limite_simulacion = 0.0  // 0 = sin límite de tiempo
 };
 
 // ============================================================================
-// ENUMERACIONES Y ESTRUCTURAS
+// ENUMERACIONES Y ESTRUCTURAS MEJORADAS
 // ============================================================================
 
 typedef enum {
@@ -141,7 +141,7 @@ typedef struct {
 } SemaforoControl;
 
 // ============================================================================
-// VARIABLES GLOBALES
+// VARIABLES GLOBALES MEJORADAS
 // ============================================================================
 
 SistemaCalle calle = {0};
@@ -220,7 +220,7 @@ int redimensionar_sistema_si_necesario() {
 }
 
 // ============================================================================
-// FUNCIONES DE CONTROL DE TRÁFICO
+// FUNCIONES DE CONTROL DE TRÁFICO MEJORADAS
 // ============================================================================
 
 Vehiculo* encontrar_vehiculo_adelante_optimizado(double posicion, Vehiculo* vehiculo_actual) {
@@ -306,7 +306,7 @@ void ajustar_por_trafico_mejorado(Vehiculo* vehiculo, double dt) {
 }
 
 // ============================================================================
-// FUNCIONES DE CONTROL DEL SEMÁFORO
+// FUNCIONES DE CONTROL DEL SEMÁFORO CON LÓGICA INTELIGENTE
 // ============================================================================
 
 void actualizar_semaforo_inteligente(double reloj) {
@@ -332,7 +332,7 @@ void actualizar_semaforo_inteligente(double reloj) {
 }
 
 // ============================================================================
-// FUNCIONES DE GESTIÓN DE EVENTOS
+// FUNCIONES DE GESTIÓN DE EVENTOS MEJORADAS
 // ============================================================================
 
 void insertar_evento_optimizado(ColaEventos* cola, Evento evento) {
@@ -360,7 +360,7 @@ void insertar_evento_optimizado(ColaEventos* cola, Evento evento) {
         cola->inicio->anterior = nuevo;
         cola->inicio = nuevo;
     } else {
-        // Búsqueda desde el final
+        // Búsqueda desde el final (más eficiente para eventos próximos)
         Nodo* actual = cola->fin;
         while (actual && actual->evento.tiempo > evento.tiempo) {
             actual = actual->anterior;
@@ -404,7 +404,7 @@ Evento* obtener_siguiente_evento_seguro(ColaEventos* cola) {
 }
 
 // ============================================================================
-// FUNCIONES DE REPORTES
+// FUNCIONES DE REPORTES MEJORADAS
 // ============================================================================
 
 const char* estado_str(EstadoVehiculo estado) {
@@ -522,7 +522,7 @@ void imprimir_estadisticas_finales(Vehiculo** todos_vehiculos, int total) {
 }
 
 // ============================================================================
-// FUNCIÓN PRINCIPAL
+// FUNCIÓN PRINCIPAL MEJORADA Y ESCALABLE
 // ============================================================================
 
 void procesar_eventos_escalable() {
@@ -542,17 +542,25 @@ void procesar_eventos_escalable() {
     int eventos_procesados = 0;
     double ultimo_reporte = 0.0;
     
-    // BUCLE PRINCIPAL
-    while ((cola.inicio || calle.num_vehiculos_activos > 0) && 
-           calle.tiempo_actual < config.tiempo_limite_simulacion) {
+    // BUCLE PRINCIPAL MEJORADO - SIN LÍMITE DE TIEMPO
+    while ((cola.inicio || calle.num_vehiculos_activos > 0)) {
         
         Evento* e = obtener_siguiente_evento_seguro(&cola);
         
         if (!e) {
             if (calle.num_vehiculos_activos > 0) {
-                printf("ADVERTENCIA: Sin eventos pero %d vehículos activos\n", 
-                       calle.num_vehiculos_activos);
-                break;
+                printf("ADVERTENCIA: Sin eventos pero %d vehículos activos en t=%.2f\n", 
+                       calle.num_vehiculos_activos, calle.tiempo_actual);
+                
+                // Debug: mostrar vehículos restantes
+                printf("Vehículos restantes:\n");
+                for (int i = 0; i < calle.num_vehiculos_activos; i++) {
+                    Vehiculo* v = calle.vehiculos_activos[i];
+                    if (v) {
+                        printf("  ID:%d Pos:%.1f Vel:%.2f Estado:%s\n", 
+                               v->id, v->posicion, v->velocidad, estado_str(v->estado));
+                    }
+                }
             }
             break;
         }
@@ -561,7 +569,32 @@ void procesar_eventos_escalable() {
         actualizar_semaforo_inteligente(calle.tiempo_actual);
         eventos_procesados++;
         
-        // PROCESAR ENTRADA DE VEHÍCULO
+        // Protección contra bucles infinitos (basada en eventos, no tiempo)
+        if (eventos_procesados > config.max_autos * 50000) {
+            printf("ADVERTENCIA: Demasiados eventos procesados (%d). Verificando estado...\n", 
+                   eventos_procesados);
+            
+            // Verificar si hay progreso
+            static double ultima_posicion_maxima = 0.0;
+            double posicion_maxima_actual = 0.0;
+            
+            for (int i = 0; i < calle.num_vehiculos_activos; i++) {
+                if (calle.vehiculos_activos[i] && 
+                    calle.vehiculos_activos[i]->posicion > posicion_maxima_actual) {
+                    posicion_maxima_actual = calle.vehiculos_activos[i]->posicion;
+                }
+            }
+            
+            if (posicion_maxima_actual <= ultima_posicion_maxima) {
+                printf("ERROR: No hay progreso en la simulación. Terminando para evitar bucle infinito.\n");
+                printf("Posición máxima: %.2f, Vehículos activos: %d\n", 
+                       posicion_maxima_actual, calle.num_vehiculos_activos);
+                break;
+            }
+            
+            ultima_posicion_maxima = posicion_maxima_actual;
+            eventos_procesados = 0; // Reiniciar contador
+        }
         if (e->tipo == ENTRADA && calle.total_vehiculos_creados < config.max_autos) {
             // Verificar espacio para entrada
             int puede_entrar = 1;
@@ -794,17 +827,15 @@ void procesar_eventos_escalable() {
             }
         }
         
-        // REPORTES PERIÓDICOS (cada 10 segundos)
-        if (calle.tiempo_actual - ultimo_reporte >= 10.0) {
+        // REPORTES PERIÓDICOS (cada 10 segundos) - Menos frecuentes para simulaciones largas
+        if (calle.tiempo_actual - ultimo_reporte >= 20.0) {
             imprimir_estado_detallado();
             ultimo_reporte = calle.tiempo_actual;
             
-            // Verificar si la simulación se está colgando
-            if (eventos_procesados > config.max_autos * 10000) {
-                printf("ADVERTENCIA: Demasiados eventos procesados (%d). Terminando simulación.\n", 
-                       eventos_procesados);
-                break;
-            }
+            // Mostrar progreso de completitud
+            double porcentaje_completado = (double)calle.total_vehiculos_completados / config.max_autos * 100.0;
+            printf(">>> PROGRESO: %.1f%% completado (%d/%d vehículos) - Tiempo: %.1fs <<<\n\n", 
+                   porcentaje_completado, calle.total_vehiculos_completados, config.max_autos, calle.tiempo_actual);
         }
         
         free(e);
@@ -813,8 +844,17 @@ void procesar_eventos_escalable() {
     // LIMPIEZA Y REPORTES FINALES
     printf("\n=== SIMULACIÓN COMPLETADA ===\n");
     printf("Eventos procesados: %d\n", eventos_procesados);
-    printf("Tiempo límite alcanzado: %s\n", 
-           (calle.tiempo_actual >= config.tiempo_limite_simulacion) ? "SÍ" : "NO");
+    
+    // Verificar si todos los vehículos completaron el recorrido
+    if (calle.total_vehiculos_completados == config.max_autos) {
+        printf("✓ ÉXITO: Todos los %d vehículos completaron el recorrido\n", config.max_autos);
+    } else {
+        printf("⚠ INCOMPLETO: %d/%d vehículos completaron el recorrido\n", 
+               calle.total_vehiculos_completados, config.max_autos);
+        printf("Vehículos restantes en el sistema: %d\n", calle.num_vehiculos_activos);
+    }
+    
+    printf("Tiempo total de simulación: %.2f segundos\n", calle.tiempo_actual);
     
     imprimir_estadisticas_finales(todos_vehiculos, calle.total_vehiculos_creados);
     
@@ -841,58 +881,362 @@ void procesar_eventos_escalable() {
 // ============================================================================
 
 int validar_configuracion() {
-    if (config.max_autos <= 0 || config.max_autos > 10000) {
-        fprintf(stderr, "ERROR: max_autos debe estar entre 1 y 10000\n");
-        return 0;
+    int errores = 0;
+    
+    printf("\n=== VALIDACIÓN FINAL ===\n");
+    
+    // Validar límites básicos
+    if (config.max_autos <= 0 || config.max_autos > 5000) {
+        fprintf(stderr, "ERROR: max_autos debe estar entre 1 y 5000 (actual: %d)\n", config.max_autos);
+        errores++;
     }
     
     if (config.paso_simulacion <= 0.001 || config.paso_simulacion > 1.0) {
-        fprintf(stderr, "ERROR: paso_simulacion debe estar entre 0.001 y 1.0\n");
-        return 0;
+        fprintf(stderr, "ERROR: paso_simulacion debe estar entre 0.001 y 1.0 (actual: %.3f)\n", 
+                config.paso_simulacion);
+        errores++;
     }
     
-    if (config.longitud_total <= 0 || config.posicion_semaforo >= config.longitud_total) {
-        fprintf(stderr, "ERROR: Configuración de longitudes inválida\n");
-        return 0;
+    if (config.longitud_total <= 0 || config.longitud_total > 2000.0) {
+        fprintf(stderr, "ERROR: longitud_total debe estar entre 1 y 2000m (actual: %.1f)\n", 
+                config.longitud_total);
+        errores++;
     }
     
-    if (params.velocidad_maxima <= 0 || params.aceleracion_maxima <= 0) {
-        fprintf(stderr, "ERROR: Parámetros físicos inválidos\n");
-        return 0;
+    if (config.posicion_semaforo <= 0 || config.posicion_semaforo >= config.longitud_total) {
+        fprintf(stderr, "ERROR: posicion_semaforo debe estar entre 1 y %.1fm (actual: %.1f)\n", 
+                config.longitud_total - 1, config.posicion_semaforo);
+        errores++;
     }
     
-    return 1;
+    if (config.intervalo_entrada_vehiculos <= 0 || config.intervalo_entrada_vehiculos > 10.0) {
+        fprintf(stderr, "ERROR: intervalo_entrada_vehiculos debe estar entre 0.1 y 10.0s (actual: %.2f)\n", 
+                config.intervalo_entrada_vehiculos);
+        errores++;
+    }
+    
+    if (params.velocidad_maxima <= 0 || params.velocidad_maxima > 50.0) {
+        fprintf(stderr, "ERROR: velocidad_maxima debe estar entre 1 y 50 m/s (actual: %.1f)\n", 
+                params.velocidad_maxima);
+        errores++;
+    }
+    
+    if (params.aceleracion_maxima <= 0 || params.aceleracion_maxima > 10.0) {
+        fprintf(stderr, "ERROR: aceleracion_maxima debe estar entre 0.5 y 10.0 m/s² (actual: %.1f)\n", 
+                params.aceleracion_maxima);
+        errores++;
+    }
+    
+    if (params.desaceleracion_maxima >= 0 || params.desaceleracion_maxima < -15.0) {
+        fprintf(stderr, "ERROR: desaceleracion_maxima debe estar entre -15.0 y -1.0 m/s² (actual: %.1f)\n", 
+                params.desaceleracion_maxima);
+        errores++;
+    }
+    
+    if (semaforo.duracion_verde < 5.0 || semaforo.duracion_verde > 120.0) {
+        fprintf(stderr, "ERROR: duracion_verde debe estar entre 5 y 120s (actual: %.1f)\n", 
+                semaforo.duracion_verde);
+        errores++;
+    }
+    
+    if (semaforo.duracion_rojo < 5.0 || semaforo.duracion_rojo > 120.0) {
+        fprintf(stderr, "ERROR: duracion_rojo debe estar entre 5 y 120s (actual: %.1f)\n", 
+                semaforo.duracion_rojo);
+        errores++;
+    }
+    
+    // Validar tiempo límite (opcional)
+    if (config.tiempo_limite_simulacion < 0.0 || config.tiempo_limite_simulacion > 7200.0) {
+        if (config.tiempo_limite_simulacion != 0.0) { // 0 = sin límite, es válido
+            fprintf(stderr, "ERROR: tiempo_limite_simulacion debe ser 0 (sin límite) o entre 1 y 7200s (actual: %.1f)\n", 
+                    config.tiempo_limite_simulacion);
+            errores++;
+        }
+    }
+    
+    // Validaciones de coherencia
+    double distancia_frenado = (params.velocidad_maxima * params.velocidad_maxima) / 
+                              (2.0 * fabs(params.desaceleracion_maxima));
+    if (distancia_frenado > config.posicion_semaforo * 0.8) {
+        printf("ADVERTENCIA: Distancia de frenado (%.1fm) muy grande comparada con posición del semáforo (%.1fm)\n", 
+               distancia_frenado, config.posicion_semaforo);
+    }
+    
+    double tiempo_ciclo = semaforo.duracion_verde + semaforo.duracion_amarillo + semaforo.duracion_rojo;
+    double vehiculos_por_ciclo = tiempo_ciclo / config.intervalo_entrada_vehiculos;
+    if (vehiculos_por_ciclo > 20) {
+        printf("ADVERTENCIA: Se crearán muchos vehículos por ciclo de semáforo (%.1f). Puede causar congestión.\n", 
+               vehiculos_por_ciclo);
+    }
+    
+    if (config.paso_simulacion > config.intervalo_entrada_vehiculos / 5.0) {
+        printf("ADVERTENCIA: Paso de simulación grande comparado con intervalo de entrada. Puede afectar precisión.\n");
+    }
+    
+    // Estimación de memoria requerida
+    size_t memoria_estimada = config.max_autos * sizeof(Vehiculo) + 
+                             config.max_autos * sizeof(Vehiculo*) + 
+                             sizeof(SistemaCalle);
+    double memoria_mb = memoria_estimada / (1024.0 * 1024.0);
+    
+    if (memoria_mb > 100.0) {
+        printf("ADVERTENCIA: Memoria estimada: %.1f MB. Simulación puede ser lenta.\n", memoria_mb);
+    } else {
+        printf("Memoria estimada: %.2f MB\n", memoria_mb);
+    }
+    
+    // Estimación de tiempo de ejecución
+    if (config.tiempo_limite_simulacion == 0.0) {
+        // Sin límite de tiempo - estimar basado en el recorrido completo
+        double tiempo_minimo_recorrido = config.longitud_total / params.velocidad_maxima;
+        double tiempo_estimado_total = tiempo_minimo_recorrido * config.max_autos * 1.5; // Factor de seguridad
+        printf("Tiempo estimado de simulación: %.1f segundos (todos los vehículos)\n", tiempo_estimado_total);
+        
+        if (tiempo_estimado_total > 1800) { // 30 minutos
+            printf("ADVERTENCIA: Simulación larga estimada (%.1f min). Considere reducir número de vehículos.\n", 
+                   tiempo_estimado_total / 60.0);
+        }
+    } else {
+        printf("Límite de tiempo configurado: %.1f segundos\n", config.tiempo_limite_simulacion);
+    }
+    
+    double eventos_estimados = config.max_autos * (config.longitud_total / params.velocidad_maxima) / config.paso_simulacion;
+    if (eventos_estimados > 2000000) {
+        printf("ADVERTENCIA: Eventos estimados: %.0f. Simulación puede tardar mucho tiempo.\n", eventos_estimados);
+    }
+    
+    if (errores > 0) {
+        fprintf(stderr, "\nSe encontraron %d errores en la configuración.\n", errores);
+        return 0;
+    } else {
+        printf("✓ Configuración válida\n");
+        return 1;
+    }
+}
+
+// Función auxiliar para limpiar el buffer de entrada
+void limpiar_buffer() {
+    int c;
+    while ((c = getchar()) != '\n' && c != EOF);
+}
+
+// Función auxiliar para leer enteros con validación
+int leer_entero_validado(const char* mensaje, int valor_actual, int min, int max) {
+    int valor, resultado;
+    char buffer[100];
+    
+    do {
+        printf("%s (actual: %d, rango: %d-%d): ", mensaje, valor_actual, min, max);
+        
+        if (fgets(buffer, sizeof(buffer), stdin) == NULL) {
+            printf("Error de lectura. Usando valor actual.\n");
+            return valor_actual;
+        }
+        
+        // Verificar si solo presionó Enter (usar valor actual)
+        if (buffer[0] == '\n') {
+            return valor_actual;
+        }
+        
+        resultado = sscanf(buffer, "%d", &valor);
+        
+        if (resultado != 1) {
+            printf("ERROR: Debe ingresar un número entero válido.\n");
+        } else if (valor < min || valor > max) {
+            printf("ERROR: El valor debe estar entre %d y %d.\n", min, max);
+        } else {
+            return valor;
+        }
+    } while (1);
+}
+
+// Función auxiliar para leer doubles con validación
+double leer_double_validado(const char* mensaje, double valor_actual, double min, double max) {
+    double valor;
+    int resultado;
+    char buffer[100];
+    
+    do {
+        printf("%s (actual: %.2f, rango: %.2f-%.2f): ", mensaje, valor_actual, min, max);
+        
+        if (fgets(buffer, sizeof(buffer), stdin) == NULL) {
+            printf("Error de lectura. Usando valor actual.\n");
+            return valor_actual;
+        }
+        
+        // Verificar si solo presionó Enter (usar valor actual)
+        if (buffer[0] == '\n') {
+            return valor_actual;
+        }
+        
+        resultado = sscanf(buffer, "%lf", &valor);
+        
+        if (resultado != 1) {
+            printf("ERROR: Debe ingresar un número decimal válido.\n");
+        } else if (valor < min || valor > max) {
+            printf("ERROR: El valor debe estar entre %.2f y %.2f.\n", min, max);
+        } else {
+            return valor;
+        }
+    } while (1);
+}
+
+// Función auxiliar para leer un carácter s/n con validación
+char leer_si_no(const char* mensaje) {
+    char respuesta;
+    char buffer[100];
+    
+    do {
+        printf("%s (s/n): ", mensaje);
+        
+        if (fgets(buffer, sizeof(buffer), stdin) == NULL) {
+            printf("Error de lectura. Usando 'n' por defecto.\n");
+            return 'n';
+        }
+        
+        respuesta = buffer[0];
+        
+        if (respuesta == 's' || respuesta == 'S' || 
+            respuesta == 'n' || respuesta == 'N') {
+            return respuesta;
+        } else {
+            printf("ERROR: Debe ingresar 's' para sí o 'n' para no.\n");
+        }
+    } while (1);
 }
 
 void configurar_simulacion_personalizada() {
     printf("=== CONFIGURACIÓN DE SIMULACIÓN ===\n");
-    printf("¿Desea usar configuración personalizada? (s/n): ");
+    printf("Instrucciones:\n");
+    printf("- Presione Enter para mantener el valor actual\n");
+    printf("- Los valores deben estar dentro de los rangos permitidos\n");
+    printf("- Use punto decimal (.) para números decimales\n\n");
     
-    char respuesta;
-    scanf(" %c", &respuesta);
+    char respuesta = leer_si_no("¿Desea usar configuración personalizada?");
     
     if (respuesta == 's' || respuesta == 'S') {
-        printf("Número máximo de autos (actual: %d): ", config.max_autos);
-        scanf("%d", &config.max_autos);
+        printf("\n--- CONFIGURACIÓN DE VEHÍCULOS ---\n");
+        config.max_autos = leer_entero_validado(
+            "Número máximo de autos", 
+            config.max_autos, 1, 5000
+        );
         
-        printf("Longitud total de la calle en metros (actual: %.1f): ", config.longitud_total);
-        scanf("%lf", &config.longitud_total);
+        config.intervalo_entrada_vehiculos = leer_double_validado(
+            "Intervalo entre entradas de vehículos (segundos)",
+            config.intervalo_entrada_vehiculos, 0.1, 10.0
+        );
         
-        printf("Posición del semáforo en metros (actual: %.1f): ", config.posicion_semaforo);
-        scanf("%lf", &config.posicion_semaforo);
+        printf("\n--- CONFIGURACIÓN DE LA CALLE ---\n");
+        config.longitud_total = leer_double_validado(
+            "Longitud total de la calle (metros)",
+            config.longitud_total, 50.0, 2000.0
+        );
         
-        printf("Intervalo entre entradas de vehículos en segundos (actual: %.1f): ", 
-               config.intervalo_entrada_vehiculos);
-        scanf("%lf", &config.intervalo_entrada_vehiculos);
+        // Validar que el semáforo esté dentro de la calle
+        double max_semaforo = config.longitud_total - 10.0;
+        if (config.posicion_semaforo >= max_semaforo) {
+            config.posicion_semaforo = max_semaforo;
+        }
         
-        printf("Velocidad máxima en m/s (actual: %.1f): ", params.velocidad_maxima);
-        scanf("%lf", &params.velocidad_maxima);
+        config.posicion_semaforo = leer_double_validado(
+            "Posición del semáforo (metros desde el inicio)",
+            config.posicion_semaforo, 10.0, max_semaforo
+        );
         
-        printf("Duración de luz verde en segundos (actual: %.1f): ", semaforo.duracion_verde);
-        scanf("%lf", &semaforo.duracion_verde);
+        printf("\n--- CONFIGURACIÓN DE VELOCIDAD ---\n");
+        params.velocidad_maxima = leer_double_validado(
+            "Velocidad máxima (m/s)",
+            params.velocidad_maxima, 1.0, 50.0
+        );
         
-        printf("Duración de luz roja en segundos (actual: %.1f): ", semaforo.duracion_rojo);
-        scanf("%lf", &semaforo.duracion_rojo);
+        printf("    (%.1f m/s = %.1f km/h)\n", 
+               params.velocidad_maxima, params.velocidad_maxima * 3.6);
+        
+        printf("\n--- CONFIGURACIÓN DEL SEMÁFORO ---\n");
+        semaforo.duracion_verde = leer_double_validado(
+            "Duración de luz verde (segundos)",
+            semaforo.duracion_verde, 5.0, 120.0
+        );
+        
+        semaforo.duracion_amarillo = leer_double_validado(
+            "Duración de luz amarilla (segundos)",
+            semaforo.duracion_amarillo, 1.0, 10.0
+        );
+        
+        semaforo.duracion_rojo = leer_double_validado(
+            "Duración de luz roja (segundos)",
+            semaforo.duracion_rojo, 5.0, 120.0
+        );
+        
+        printf("\n--- CONFIGURACIÓN AVANZADA ---\n");
+        char config_avanzada = leer_si_no("¿Configurar parámetros avanzados?");
+        
+        if (config_avanzada == 's' || config_avanzada == 'S') {
+            config.paso_simulacion = leer_double_validado(
+                "Paso de simulación (segundos)",
+                config.paso_simulacion, 0.01, 0.5
+            );
+            
+            // Opción para límite de tiempo (opcional)
+            char usar_limite = leer_si_no("¿Usar límite de tiempo? (recomendado: NO para completar todos los vehículos)");
+            if (usar_limite == 's' || usar_limite == 'S') {
+                config.tiempo_limite_simulacion = leer_double_validado(
+                    "Tiempo límite de simulación (segundos, 0 = sin límite)",
+                    config.tiempo_limite_simulacion, 0.0, 7200.0
+                );
+            } else {
+                config.tiempo_limite_simulacion = 0.0; // Sin límite
+                printf("✓ Simulación sin límite de tiempo - todos los vehículos completarán el recorrido\n");
+            }
+            
+            params.aceleracion_maxima = leer_double_validado(
+                "Aceleración máxima (m/s²)",
+                params.aceleracion_maxima, 0.5, 10.0
+            );
+            
+            params.desaceleracion_maxima = leer_double_validado(
+                "Desaceleración máxima (m/s²) - valor positivo",
+                fabs(params.desaceleracion_maxima), 1.0, 15.0
+            );
+            params.desaceleracion_maxima = -fabs(params.desaceleracion_maxima);
+            
+            params.distancia_seguridad_min = leer_double_validado(
+                "Distancia mínima de seguridad (metros)",
+                params.distancia_seguridad_min, 1.0, 20.0
+            );
+        } else {
+            // Si no configura avanzado, mantener sin límite de tiempo
+            config.tiempo_limite_simulacion = 0.0;
+            printf("✓ Usando configuración estándar sin límite de tiempo\n");
+        }
+        
+        // Validaciones adicionales entre parámetros
+        printf("\n--- VALIDANDO CONFIGURACIÓN ---\n");
+        
+        // Ajustar paso de simulación si es necesario
+        double paso_max_recomendado = config.intervalo_entrada_vehiculos / 10.0;
+        if (config.paso_simulacion > paso_max_recomendado) {
+            printf("ADVERTENCIA: Paso de simulación muy grande. Ajustando a %.3f\n", 
+                   paso_max_recomendado);
+            config.paso_simulacion = paso_max_recomendado;
+        }
+        
+        // Verificar que el semáforo no esté muy cerca del final
+        if (config.posicion_semaforo > config.longitud_total * 0.9) {
+            printf("ADVERTENCIA: Semáforo muy cerca del final. Puede afectar los resultados.\n");
+        }
+        
+        // Verificar coherencia de velocidades y distancias
+        double tiempo_frenado = params.velocidad_maxima / fabs(params.desaceleracion_maxima);
+        double distancia_frenado = 0.5 * params.velocidad_maxima * tiempo_frenado;
+        if (distancia_frenado > config.longitud_total * 0.3) {
+            printf("ADVERTENCIA: Distancia de frenado (%.1fm) muy grande para la calle.\n", 
+                   distancia_frenado);
+        }
+        
+        printf("Configuración validada correctamente.\n");
+    } else {
+        printf("Usando configuración por defecto.\n");
     }
     
     // Mostrar configuración final
@@ -906,12 +1250,18 @@ void configurar_simulacion_personalizada() {
     printf("Semáforo - Verde: %.1fs, Rojo: %.1fs\n", 
            semaforo.duracion_verde, semaforo.duracion_rojo);
     printf("Paso de simulación: %.3f s\n", config.paso_simulacion);
-    printf("Tiempo límite: %.1f s\n", config.tiempo_limite_simulacion);
+    
+    if (config.tiempo_limite_simulacion > 0.0) {
+        printf("Límite de tiempo: %.1f s\n", config.tiempo_limite_simulacion);
+    } else {
+        printf("Límite de tiempo: NINGUNO (completar todos los vehículos)\n");
+    }
+    
     printf("===============================\n\n");
 }
 
 // ============================================================================
-// FUNCIÓN PRINCIPAL
+// FUNCIÓN PRINCIPAL MEJORADA
 // ============================================================================
 
 int main() {

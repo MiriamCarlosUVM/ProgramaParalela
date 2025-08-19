@@ -128,7 +128,7 @@ typedef struct {
     double distancia_seguridad_min;
     double longitud_vehiculo;
     double tiempo_reaccion;
-    double factor_congestion; // Nuevo: reduce velocidad en congestión
+    double factor_congestion; // Nuevo: reduce velocidad en congestion
 } ParametrosSimulacion;
 
 typedef struct {
@@ -179,11 +179,11 @@ void inicializar_sistema() {
                              calle.capacidad_vehiculos * sizeof(Vehiculo*);
     
     if (!calle.vehiculos_activos) {
-        fprintf(stderr, "ERROR: No se pudo asignar memoria para vehículos\n");
+        fprintf(stderr, "ERROR: No se pudo asignar memoria para vehiculos\n");
         exit(1);
     }
     
-    printf("Sistema inicializado: capacidad %d vehículos, memoria: %zu bytes\n", 
+    printf("Sistema inicializado: capacidad %d vehiculos, memoria: %zu bytes\n", 
            calle.capacidad_vehiculos, calle.memoria_utilizada);
 }
 
@@ -202,7 +202,7 @@ int redimensionar_sistema_si_necesario() {
                                                          nueva_capacidad * sizeof(Vehiculo*));
         
         if (!nuevos_vehiculos) {
-            fprintf(stderr, "ERROR: No se pudo redimensionar array de vehículos\n");
+            fprintf(stderr, "ERROR: No se pudo redimensionar array de vehiculos\n");
             return 0;
         }
         
@@ -214,7 +214,7 @@ int redimensionar_sistema_si_necesario() {
         calle.vehiculos_activos = nuevos_vehiculos;
         calle.capacidad_vehiculos = nueva_capacidad;
         
-        printf("Sistema redimensionado a capacidad: %d vehículos\n", nueva_capacidad);
+        printf("Sistema redimensionado a capacidad: %d vehiculos\n", nueva_capacidad);
     }
     return 1;
 }
@@ -235,7 +235,7 @@ Vehiculo* encontrar_vehiculo_adelante_optimizado(double posicion, Vehiculo* vehi
         
         if (v == vehiculo_actual || !v) continue;
         
-        // Solo considerar vehículos en rango relevante
+        // Solo considerar vehiculos en rango relevante
         double diferencia_pos = v->posicion - posicion;
         if (diferencia_pos > 0 && diferencia_pos <= rango_busqueda) {
             if (diferencia_pos < distancia_minima) {
@@ -306,7 +306,7 @@ void ajustar_por_trafico_mejorado(Vehiculo* vehiculo, double dt) {
 }
 
 // ============================================================================
-// FUNCIONES DE CONTROL DEL SEMÁFORO CON LÓGICA INTELIGENTE
+// FUNCIONES DE CONTROL DEL Semaforo CON LÓGICA INTELIGENTE
 // ============================================================================
 
 void actualizar_semaforo_inteligente(double reloj) {
@@ -434,7 +434,7 @@ void imprimir_estado_detallado() {
            calle.tiempo_actual, color_semaforo(semaforo.estado),
            calle.num_vehiculos_activos, calle.total_vehiculos_creados);
     
-    // Mostrar solo algunos vehículos para evitar spam
+    // Mostrar solo algunos vehiculos para evitar spam
     int mostrar_hasta = fmin(calle.num_vehiculos_activos, 8);
     
     for (int i = 0; i < mostrar_hasta; i++) {
@@ -455,7 +455,7 @@ void imprimir_estado_detallado() {
     }
     
     if (calle.num_vehiculos_activos > mostrar_hasta) {
-        printf("... y %d vehículos más\n", calle.num_vehiculos_activos - mostrar_hasta);
+        printf("... y %d vehiculos más\n", calle.num_vehiculos_activos - mostrar_hasta);
     }
     
     printf("Memoria: %zu KB | Cola max: %d eventos\n", 
@@ -464,60 +464,113 @@ void imprimir_estado_detallado() {
 }
 
 void imprimir_estadisticas_finales(Vehiculo** todos_vehiculos, int total) {
-    printf("\n==== ESTADÍSTICAS FINALES DE LA SIMULACIÓN ====\n");
+    printf("\n==== ESTADISTICAS FINALES DE LA SIMULACIÓN ====\n");
     printf("Tiempo total: %.2f segundos\n", calle.tiempo_actual);
-    printf("Vehículos creados: %d\n", calle.total_vehiculos_creados);
-    printf("Vehículos completados: %d\n", calle.total_vehiculos_completados);
-    printf("Ciclos de semáforo: %d\n", semaforo.ciclos_completados);
-    
+    printf("Vehiculos creados: %d\n", calle.total_vehiculos_creados);
+    printf("Vehiculos completados: %d\n", calle.total_vehiculos_completados);
+    printf("Ciclos de Semaforo: %d\n", semaforo.ciclos_completados);
+
+    // 🔹 Crear nombre de archivo con fecha y hora
+    char nombre_archivo[128];
+    time_t ahora = time(NULL);
+    struct tm *t = localtime(&ahora);
+    strftime(nombre_archivo, sizeof(nombre_archivo), "resultados_%Y%m%d_%H%M%S.csv", t);
+
+    // 🔹 Abrir archivo CSV
+    FILE *csv = fopen(nombre_archivo, "w");
+    if (!csv) {
+        printf("❌ ERROR: No se pudo crear archivo CSV: %s\n", nombre_archivo);
+        perror("Detalle del error");
+    } else {
+        fprintf(csv, "ID,Entrada,Semaforo,Salida,Detenido,VelProm\n");
+        printf("✅ Creando archivo: %s\n", nombre_archivo);
+    }
+
     if (calle.total_vehiculos_completados > 0) {
         double tiempo_promedio = 0.0;
         double velocidad_promedio_total = 0.0;
         double tiempo_detenido_promedio = 0.0;
-        
+
         for (int i = 0; i < total; i++) {
             if (todos_vehiculos[i] && todos_vehiculos[i]->estado == SALIENDO) {
                 double tiempo_recorrido = todos_vehiculos[i]->tiempo_salida - todos_vehiculos[i]->tiempo_entrada;
                 tiempo_promedio += tiempo_recorrido;
-                
+
                 if (tiempo_recorrido > 0) {
                     velocidad_promedio_total += config.longitud_total / tiempo_recorrido;
                 }
-                
+
                 tiempo_detenido_promedio += todos_vehiculos[i]->tiempo_total_detenido;
             }
         }
-        
+
         tiempo_promedio /= calle.total_vehiculos_completados;
         velocidad_promedio_total /= calle.total_vehiculos_completados;
         tiempo_detenido_promedio /= calle.total_vehiculos_completados;
-        
+
         printf("Tiempo promedio de recorrido: %.2f segundos\n", tiempo_promedio);
         printf("Velocidad promedio: %.2f m/s (%.1f km/h)\n", 
                velocidad_promedio_total, velocidad_promedio_total * 3.6);
         printf("Tiempo promedio detenido: %.2f segundos\n", tiempo_detenido_promedio);
         printf("Eficiencia del sistema: %.1f%%\n", 
                (velocidad_promedio_total / params.velocidad_maxima) * 100.0);
+
+        // 🔹 Guardar estadísticas generales en CSV
+        if (csv) {
+            fprintf(csv, "# ESTADISTICAS_GENERALES\n");
+            fprintf(csv, "TiempoTotal,%.2f\n", calle.tiempo_actual);
+            fprintf(csv, "VehiculosCreados,%d\n", calle.total_vehiculos_creados);
+            fprintf(csv, "VehiculosCompletados,%d\n", calle.total_vehiculos_completados);
+            fprintf(csv, "CiclosSemaforo,%d\n", semaforo.ciclos_completados);
+            fprintf(csv, "TiempoPromedio,%.2f\n", tiempo_promedio);
+            fprintf(csv, "VelocidadPromedio,%.2f\n", velocidad_promedio_total);
+            fprintf(csv, "TiempoDetenidoPromedio,%.2f\n", tiempo_detenido_promedio);
+            fprintf(csv, "Eficiencia,%.1f\n", (velocidad_promedio_total / params.velocidad_maxima) * 100.0);
+            fprintf(csv, "# DATOS_VEHICULOS\n");
+            fprintf(csv, "ID,Entrada,Semaforo,Salida,Detenido,VelProm\n");
+        }
     }
-    
-    printf("\n=== TABLA DETALLADA (primeros 10 vehículos) ===\n");
-    printf("ID | Entrada | Semáforo | Salida | Detenido | Vel.Prom\n");
+
+    printf("\n=== TABLA DETALLADA ===\n");
+    printf("ID | Entrada | Semaforo | Salida | Detenido | Vel.Prom\n");
     printf("---|---------|----------|--------|----------|----------\n");
-    
-    int mostrar = fmin(total, 10);
-    for (int i = 0; i < mostrar; i++) {
-        if (todos_vehiculos[i]) {
+
+    // 🔹 Guardar TODOS los vehiculos completados
+    int contador_csv = 0;
+    for (int i = 0; i < total; i++) {
+        if (todos_vehiculos[i] && todos_vehiculos[i]->estado == SALIENDO) {
             Vehiculo* v = todos_vehiculos[i];
             double vel_promedio = 0.0;
             if (v->tiempo_salida > v->tiempo_entrada) {
                 vel_promedio = config.longitud_total / (v->tiempo_salida - v->tiempo_entrada);
             }
-            
-            printf("%2d | %7.2f | %8.2f | %6.2f | %8.2f | %8.2f\n",
-                v->id, v->tiempo_entrada, v->tiempo_llegada_semaforo,
-                v->tiempo_salida, v->tiempo_total_detenido, vel_promedio);
+
+            // Imprimir en terminal (solo primeros 10 para visualización)
+            if (contador_csv < 10) {
+                printf("%2d | %7.2f | %8.2f | %6.2f | %8.2f | %8.2f\n",
+                    v->id, v->tiempo_entrada, v->tiempo_llegada_semaforo,
+                    v->tiempo_salida, v->tiempo_total_detenido, vel_promedio);
+            }
+
+            // Guardar en CSV (TODOS los vehiculos)
+            if (csv) {
+                fprintf(csv, "%d,%.2f,%.2f,%.2f,%.2f,%.2f\n",
+                        v->id, v->tiempo_entrada, v->tiempo_llegada_semaforo,
+                        v->tiempo_salida, v->tiempo_total_detenido, vel_promedio);
+                fflush(csv);  // Forzar escritura
+            }
+            contador_csv++;
         }
     }
+
+    // 🔹 Cerrar CSV
+    if (csv) {
+        fclose(csv);
+        printf("\n✅ Resultados guardados en %s (%d vehiculos)\n", nombre_archivo, contador_csv);
+    } else {
+        printf("\n❌ No se pudo guardar archivo CSV\n");
+    }
+
     printf("\n");
 }
 
@@ -531,7 +584,7 @@ void procesar_eventos_escalable() {
     Vehiculo** todos_vehiculos = (Vehiculo**)calloc(config.max_autos, sizeof(Vehiculo*));
     
     if (!todos_vehiculos) {
-        fprintf(stderr, "ERROR: No se pudo asignar memoria para array de vehículos\n");
+        fprintf(stderr, "ERROR: No se pudo asignar memoria para array de vehiculos\n");
         return;
     }
     
@@ -549,11 +602,11 @@ void procesar_eventos_escalable() {
         
         if (!e) {
             if (calle.num_vehiculos_activos > 0) {
-                printf("ADVERTENCIA: Sin eventos pero %d vehículos activos en t=%.2f\n", 
+                printf("ADVERTENCIA: Sin eventos pero %d vehiculos activos en t=%.2f\n", 
                        calle.num_vehiculos_activos, calle.tiempo_actual);
                 
-                // Debug: mostrar vehículos restantes
-                printf("Vehículos restantes:\n");
+                // Debug: mostrar vehiculos restantes
+                printf("Vehiculos restantes:\n");
                 for (int i = 0; i < calle.num_vehiculos_activos; i++) {
                     Vehiculo* v = calle.vehiculos_activos[i];
                     if (v) {
@@ -587,7 +640,7 @@ void procesar_eventos_escalable() {
             
             if (posicion_maxima_actual <= ultima_posicion_maxima) {
                 printf("ERROR: No hay progreso en la simulación. Terminando para evitar bucle infinito.\n");
-                printf("Posición máxima: %.2f, Vehículos activos: %d\n", 
+                printf("Posición máxima: %.2f, Vehiculos activos: %d\n", 
                        posicion_maxima_actual, calle.num_vehiculos_activos);
                 break;
             }
@@ -614,7 +667,7 @@ void procesar_eventos_escalable() {
                 
                 Vehiculo* v = (Vehiculo*)calloc(1, sizeof(Vehiculo));
                 if (!v) {
-                    fprintf(stderr, "ERROR: No se pudo crear vehículo\n");
+                    fprintf(stderr, "ERROR: No se pudo crear vehiculo\n");
                     free(e);
                     continue;
                 }
@@ -631,7 +684,7 @@ void procesar_eventos_escalable() {
                 calle.vehiculos_activos[calle.num_vehiculos_activos++] = v;
                 calle.total_vehiculos_creados++;
                 
-                printf("[%.2f] Vehículo %d entra (total activos: %d)\n", 
+                printf("[%.2f] Vehiculo %d entra (total activos: %d)\n", 
                        calle.tiempo_actual, v->id, calle.num_vehiculos_activos);
                 
                 // Programar actualización
@@ -668,7 +721,7 @@ void procesar_eventos_escalable() {
             double velocidad_anterior = v->velocidad;
             EstadoVehiculo estado_anterior = v->estado;
             
-            // Registrar llegada al semáforo
+            // Registrar llegada al Semaforo
             if (v->tiempo_llegada_semaforo == 0.0 && v->posicion >= config.posicion_semaforo) {
                 v->tiempo_llegada_semaforo = calle.tiempo_actual;
             }
@@ -702,7 +755,7 @@ void procesar_eventos_escalable() {
                 ajustar_por_trafico_mejorado(v, dt);
                 
                 if (v->estado != FRENANDO && v->estado != DESACELERANDO) {
-                    // Lógica de semáforo
+                    // Lógica de Semaforo
                     if (semaforo.estado == ROJO && v->posicion < config.posicion_semaforo) {
                         double distancia_semaforo = config.posicion_semaforo - v->posicion;
                         double distancia_frenado = (v->velocidad * v->velocidad) / 
@@ -779,7 +832,7 @@ void procesar_eventos_escalable() {
                 v->tiempo_total_detenido += dt;
             }
             
-            // Detener cerca del semáforo si es necesario
+            // Detener cerca del Semaforo si es necesario
             if (v->posicion >= config.posicion_semaforo - 3.0 && 
                 v->posicion < config.posicion_semaforo && 
                 v->velocidad < 1.0 && semaforo.estado == ROJO) {
@@ -808,10 +861,10 @@ void procesar_eventos_escalable() {
                 calle.total_vehiculos_completados++;
                 
                 double tiempo_total = v->tiempo_salida - v->tiempo_entrada;
-                printf("[%.2f] Vehículo %d completa recorrido en %.2fs (vel.prom: %.2fm/s)\n",
+                printf("[%.2f] Vehiculo %d completa recorrido en %.2fs (vel.prom: %.2fm/s)\n",
                        calle.tiempo_actual, v->id, tiempo_total, v->velocidad_promedio);
                 
-                // Remover de vehículos activos
+                // Remover de vehiculos activos
                 for (int i = 0; i < calle.num_vehiculos_activos; i++) {
                     if (calle.vehiculos_activos[i] == v) {
                         calle.vehiculos_activos[i] = calle.vehiculos_activos[calle.num_vehiculos_activos - 1];
@@ -834,7 +887,7 @@ void procesar_eventos_escalable() {
             
             // Mostrar progreso de completitud
             double porcentaje_completado = (double)calle.total_vehiculos_completados / config.max_autos * 100.0;
-            printf(">>> PROGRESO: %.1f%% completado (%d/%d vehículos) - Tiempo: %.1fs <<<\n\n", 
+            printf(">>> PROGRESO: %.1f%% completado (%d/%d vehiculos) - Tiempo: %.1fs <<<\n\n", 
                    porcentaje_completado, calle.total_vehiculos_completados, config.max_autos, calle.tiempo_actual);
         }
         
@@ -842,29 +895,29 @@ void procesar_eventos_escalable() {
     }
     
     // LIMPIEZA Y REPORTES FINALES
-    printf("\n=== SIMULACIÓN COMPLETADA ===\n");
+    printf("\n=== SIMULACION COMPLETADA ===\n");
     printf("Eventos procesados: %d\n", eventos_procesados);
     
-    // Verificar si todos los vehículos completaron el recorrido
+    // Verificar si todos los vehiculos completaron el recorrido
     if (calle.total_vehiculos_completados == config.max_autos) {
-        printf("✓ ÉXITO: Todos los %d vehículos completaron el recorrido\n", config.max_autos);
+        printf("✓ EXITO: Todos los %d vehiculos completaron el recorrido\n", config.max_autos);
     } else {
-        printf("⚠ INCOMPLETO: %d/%d vehículos completaron el recorrido\n", 
+        printf("⚠ INCOMPLETO: %d/%d vehiculos completaron el recorrido\n", 
                calle.total_vehiculos_completados, config.max_autos);
-        printf("Vehículos restantes en el sistema: %d\n", calle.num_vehiculos_activos);
+        printf("Vehiculos restantes en el sistema: %d\n", calle.num_vehiculos_activos);
     }
     
-    printf("Tiempo total de simulación: %.2f segundos\n", calle.tiempo_actual);
+    printf("Tiempo total de simulacion: %.2f segundos\n", calle.tiempo_actual);
     
     imprimir_estadisticas_finales(todos_vehiculos, calle.total_vehiculos_creados);
     
-    // Liberar memoria de vehículos restantes en la cola
+    // Liberar memoria de vehiculos restantes en la cola
     while (cola.inicio) {
         Evento* e = obtener_siguiente_evento_seguro(&cola);
         if (e) free(e);
     }
     
-    // Liberar memoria de todos los vehículos
+    // Liberar memoria de todos los vehiculos
     for (int i = 0; i < calle.total_vehiculos_creados; i++) {
         if (todos_vehiculos[i]) {
             free(todos_vehiculos[i]);
@@ -873,7 +926,7 @@ void procesar_eventos_escalable() {
     }
     
     free(todos_vehiculos);
-    printf("Memoria de vehículos liberada correctamente.\n");
+    printf("Memoria de vehiculos liberada correctamente.\n");
 }
 
 // ============================================================================
@@ -883,7 +936,7 @@ void procesar_eventos_escalable() {
 int validar_configuracion() {
     int errores = 0;
     
-    printf("\n=== VALIDACIÓN FINAL ===\n");
+    printf("\n=== VALIDACION FINAL ===\n");
     
     // Validar límites básicos
     if (config.max_autos <= 0 || config.max_autos > 5000) {
@@ -958,14 +1011,14 @@ int validar_configuracion() {
     double distancia_frenado = (params.velocidad_maxima * params.velocidad_maxima) / 
                               (2.0 * fabs(params.desaceleracion_maxima));
     if (distancia_frenado > config.posicion_semaforo * 0.8) {
-        printf("ADVERTENCIA: Distancia de frenado (%.1fm) muy grande comparada con posición del semáforo (%.1fm)\n", 
+        printf("ADVERTENCIA: Distancia de frenado (%.1fm) muy grande comparada con posición del Semaforo (%.1fm)\n", 
                distancia_frenado, config.posicion_semaforo);
     }
     
     double tiempo_ciclo = semaforo.duracion_verde + semaforo.duracion_amarillo + semaforo.duracion_rojo;
     double vehiculos_por_ciclo = tiempo_ciclo / config.intervalo_entrada_vehiculos;
     if (vehiculos_por_ciclo > 20) {
-        printf("ADVERTENCIA: Se crearán muchos vehículos por ciclo de semáforo (%.1f). Puede causar congestión.\n", 
+        printf("ADVERTENCIA: Se crearán muchos vehiculos por ciclo de Semaforo (%.1f). Puede causar congestión.\n", 
                vehiculos_por_ciclo);
     }
     
@@ -985,15 +1038,15 @@ int validar_configuracion() {
         printf("Memoria estimada: %.2f MB\n", memoria_mb);
     }
     
-    // Estimación de tiempo de ejecución
+    // Estimación de tiempo de ejecucion
     if (config.tiempo_limite_simulacion == 0.0) {
         // Sin límite de tiempo - estimar basado en el recorrido completo
         double tiempo_minimo_recorrido = config.longitud_total / params.velocidad_maxima;
         double tiempo_estimado_total = tiempo_minimo_recorrido * config.max_autos * 1.5; // Factor de seguridad
-        printf("Tiempo estimado de simulación: %.1f segundos (todos los vehículos)\n", tiempo_estimado_total);
+        printf("Tiempo estimado de simulación: %.1f segundos (todos los vehiculos)\n", tiempo_estimado_total);
         
         if (tiempo_estimado_total > 1800) { // 30 minutos
-            printf("ADVERTENCIA: Simulación larga estimada (%.1f min). Considere reducir número de vehículos.\n", 
+            printf("ADVERTENCIA: Simulación larga estimada (%.1f min). Considere reducir número de vehiculos.\n", 
                    tiempo_estimado_total / 60.0);
         }
     } else {
@@ -1006,10 +1059,10 @@ int validar_configuracion() {
     }
     
     if (errores > 0) {
-        fprintf(stderr, "\nSe encontraron %d errores en la configuración.\n", errores);
+        fprintf(stderr, "\nSe encontraron %d errores en la configuracion.\n", errores);
         return 0;
     } else {
-        printf("✓ Configuración válida\n");
+        printf("✓ Configuracion valida\n");
         return 1;
     }
 }
@@ -1106,23 +1159,23 @@ char leer_si_no(const char* mensaje) {
 }
 
 void configurar_simulacion_personalizada() {
-    printf("=== CONFIGURACIÓN DE SIMULACIÓN ===\n");
+    printf("=== CONFIGURACION DE SIMULACION ===\n");
     printf("Instrucciones:\n");
     printf("- Presione Enter para mantener el valor actual\n");
     printf("- Los valores deben estar dentro de los rangos permitidos\n");
     printf("- Use punto decimal (.) para números decimales\n\n");
     
-    char respuesta = leer_si_no("¿Desea usar configuración personalizada?");
+    char respuesta = leer_si_no("¿Desea usar configuracion personalizada?");
     
     if (respuesta == 's' || respuesta == 'S') {
-        printf("\n--- CONFIGURACIÓN DE VEHÍCULOS ---\n");
+        printf("\n--- CONFIGURACION DE VEHICULOS ---\n");
         config.max_autos = leer_entero_validado(
             "Número máximo de autos", 
             config.max_autos, 1, 5000
         );
         
         config.intervalo_entrada_vehiculos = leer_double_validado(
-            "Intervalo entre entradas de vehículos (segundos)",
+            "Intervalo entre entradas de vehiculos (segundos)",
             config.intervalo_entrada_vehiculos, 0.1, 10.0
         );
         
@@ -1132,18 +1185,18 @@ void configurar_simulacion_personalizada() {
             config.longitud_total, 50.0, 2000.0
         );
         
-        // Validar que el semáforo esté dentro de la calle
+        // Validar que el Semaforo esté dentro de la calle
         double max_semaforo = config.longitud_total - 10.0;
         if (config.posicion_semaforo >= max_semaforo) {
             config.posicion_semaforo = max_semaforo;
         }
         
         config.posicion_semaforo = leer_double_validado(
-            "Posición del semáforo (metros desde el inicio)",
+            "Posicion del semaforo (metros desde el inicio)",
             config.posicion_semaforo, 10.0, max_semaforo
         );
         
-        printf("\n--- CONFIGURACIÓN DE VELOCIDAD ---\n");
+        printf("\n--- CONFIGURACION DE VELOCIDAD ---\n");
         params.velocidad_maxima = leer_double_validado(
             "Velocidad máxima (m/s)",
             params.velocidad_maxima, 1.0, 50.0
@@ -1152,7 +1205,7 @@ void configurar_simulacion_personalizada() {
         printf("    (%.1f m/s = %.1f km/h)\n", 
                params.velocidad_maxima, params.velocidad_maxima * 3.6);
         
-        printf("\n--- CONFIGURACIÓN DEL SEMÁFORO ---\n");
+        printf("\n--- CONFIGURACION DEL Semaforo ---\n");
         semaforo.duracion_verde = leer_double_validado(
             "Duración de luz verde (segundos)",
             semaforo.duracion_verde, 5.0, 120.0
@@ -1168,7 +1221,7 @@ void configurar_simulacion_personalizada() {
             semaforo.duracion_rojo, 5.0, 120.0
         );
         
-        printf("\n--- CONFIGURACIÓN AVANZADA ---\n");
+        printf("\n--- CONFIGURACION AVANZADA ---\n");
         char config_avanzada = leer_si_no("¿Configurar parámetros avanzados?");
         
         if (config_avanzada == 's' || config_avanzada == 'S') {
@@ -1178,7 +1231,7 @@ void configurar_simulacion_personalizada() {
             );
             
             // Opción para límite de tiempo (opcional)
-            char usar_limite = leer_si_no("¿Usar límite de tiempo? (recomendado: NO para completar todos los vehículos)");
+            char usar_limite = leer_si_no("¿Usar límite de tiempo? (recomendado: NO para completar todos los vehiculos)");
             if (usar_limite == 's' || usar_limite == 'S') {
                 config.tiempo_limite_simulacion = leer_double_validado(
                     "Tiempo límite de simulación (segundos, 0 = sin límite)",
@@ -1186,7 +1239,7 @@ void configurar_simulacion_personalizada() {
                 );
             } else {
                 config.tiempo_limite_simulacion = 0.0; // Sin límite
-                printf("✓ Simulación sin límite de tiempo - todos los vehículos completarán el recorrido\n");
+                printf("✓ Simulación sin límite de tiempo - todos los vehiculos completarán el recorrido\n");
             }
             
             params.aceleracion_maxima = leer_double_validado(
@@ -1207,23 +1260,23 @@ void configurar_simulacion_personalizada() {
         } else {
             // Si no configura avanzado, mantener sin límite de tiempo
             config.tiempo_limite_simulacion = 0.0;
-            printf("✓ Usando configuración estándar sin límite de tiempo\n");
+            printf("✓ Usando configuracion estAndar sin lImite de tiempo\n");
         }
         
         // Validaciones adicionales entre parámetros
-        printf("\n--- VALIDANDO CONFIGURACIÓN ---\n");
+        printf("\n--- VALIDANDO CONFIGURACION ---\n");
         
         // Ajustar paso de simulación si es necesario
         double paso_max_recomendado = config.intervalo_entrada_vehiculos / 10.0;
         if (config.paso_simulacion > paso_max_recomendado) {
-            printf("ADVERTENCIA: Paso de simulación muy grande. Ajustando a %.3f\n", 
+            printf("ADVERTENCIA: Paso de simulacion muy grande. Ajustando a %.3f\n", 
                    paso_max_recomendado);
             config.paso_simulacion = paso_max_recomendado;
         }
         
-        // Verificar que el semáforo no esté muy cerca del final
+        // Verificar que el Semaforo no esté muy cerca del final
         if (config.posicion_semaforo > config.longitud_total * 0.9) {
-            printf("ADVERTENCIA: Semáforo muy cerca del final. Puede afectar los resultados.\n");
+            printf("ADVERTENCIA: Semaforo muy cerca del final. Puede afectar los resultados.\n");
         }
         
         // Verificar coherencia de velocidades y distancias
@@ -1234,27 +1287,27 @@ void configurar_simulacion_personalizada() {
                    distancia_frenado);
         }
         
-        printf("Configuración validada correctamente.\n");
+        printf("Configuracion validada correctamente.\n");
     } else {
-        printf("Usando configuración por defecto.\n");
+        printf("Usando configuracion por defecto.\n");
     }
     
     // Mostrar configuración final
-    printf("\n=== CONFIGURACIÓN FINAL ===\n");
+    printf("\n=== CONFIGURACIoN FINAL ===\n");
     printf("Máximo autos: %d\n", config.max_autos);
     printf("Longitud calle: %.1f m\n", config.longitud_total);
-    printf("Posición semáforo: %.1f m\n", config.posicion_semaforo);
+    printf("Posición Semaforo: %.1f m\n", config.posicion_semaforo);
     printf("Intervalo entrada: %.1f s\n", config.intervalo_entrada_vehiculos);
     printf("Velocidad máxima: %.1f m/s (%.1f km/h)\n", 
            params.velocidad_maxima, params.velocidad_maxima * 3.6);
-    printf("Semáforo - Verde: %.1fs, Rojo: %.1fs\n", 
+    printf("Semaforo - Verde: %.1fs, Rojo: %.1fs\n", 
            semaforo.duracion_verde, semaforo.duracion_rojo);
     printf("Paso de simulación: %.3f s\n", config.paso_simulacion);
     
     if (config.tiempo_limite_simulacion > 0.0) {
         printf("Límite de tiempo: %.1f s\n", config.tiempo_limite_simulacion);
     } else {
-        printf("Límite de tiempo: NINGUNO (completar todos los vehículos)\n");
+        printf("Límite de tiempo: NINGUNO (completar todos los vehiculos)\n");
     }
     
     printf("===============================\n\n");
@@ -1267,20 +1320,20 @@ void configurar_simulacion_personalizada() {
 int main() {
     srand((unsigned int)time(NULL));
     
-    printf("=== SIMULACIÓN DE TRÁFICO ESCALABLE v2.0 ===\n");
+    printf("=== SIMULACION DE TRAFICO ESCALABLE v2.0 ===\n");
     printf("Características:\n");
-    printf("- Gestión dinámica de memoria\n");
+    printf("- Gestion dinamica de memoria\n");
     printf("- Control avanzado de colisiones\n");
-    printf("- Semáforo inteligente\n");
-    printf("- Estadísticas detalladas\n");
-    printf("- Escalable hasta miles de vehículos\n\n");
+    printf("- Semaforo inteligente\n");
+    printf("- Estadisticas detalladas\n");
+    printf("- Escalable hasta miles de vehiculos\n\n");
     
-    // Configuración interactiva
+    // Configuracion interactiva
     configurar_simulacion_personalizada();
     
-    // Validar configuración
+    // Validar configuracion
     if (!validar_configuracion()) {
-        fprintf(stderr, "Configuración inválida. Terminando.\n");
+        fprintf(stderr, "Configuracion invalida. Terminando.\n");
         return 1;
     }
     
@@ -1296,17 +1349,17 @@ int main() {
     clock_t fin = clock();
     double tiempo_ejecucion = ((double)(fin - inicio)) / CLOCKS_PER_SEC;
     
-    printf("\n=== MÉTRICAS DE RENDIMIENTO ===\n");
-    printf("Tiempo de ejecución: %.3f segundos\n", tiempo_ejecucion);
+    printf("\n=== METRICAS DE RENDIMIENTO ===\n");
+    printf("Tiempo de ejecucion: %.3f segundos\n", tiempo_ejecucion);
     printf("Tiempo simulado: %.2f segundos\n", calle.tiempo_actual);
     printf("Factor de aceleración: %.1fx\n", calle.tiempo_actual / tiempo_ejecucion);
-    printf("Vehículos procesados: %d\n", calle.total_vehiculos_creados);
-    printf("Throughput: %.1f vehículos/segundo de simulación\n", 
+    printf("Vehiculos procesados: %d\n", calle.total_vehiculos_creados);
+    printf("Throughput: %.1f vehiculos/segundo de simulación\n", 
            (double)calle.total_vehiculos_completados / calle.tiempo_actual);
     
     // Limpiar sistema
     limpiar_sistema();
     
-    printf("\nSimulación completada exitosamente.\n");
+    printf("\nSimulacion completada exitosamente.\n");
     return 0;
 }

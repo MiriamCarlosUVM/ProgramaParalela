@@ -1,0 +1,16 @@
+ID,Entrada,Semaforo,Salida,Detenido,VelProm
+# ESTADISTICAS_GENERALES
+TiempoTotal,7.05
+VehiculosCreados,1
+VehiculosCompletados,1
+CiclosSemaforo,0
+TiempoPromedio,7.05
+VelocidadPromedio,7.09
+TiempoDetenidoPromedio,0.00
+Eficiencia,70.9
+# DATOS_VEHICULOS
+ID,Entrada,Semaforo,Salida,Detenido,VelProm
+1,0.00,2.90,7.05,0.00,7.09
+
+
+

@@ -574,6 +574,59 @@ void imprimir_estadisticas_finales(Vehiculo** todos_vehiculos, int total) {
     printf("\n");
 }
 
+
+// ============================================================================
+// FUNCIONES PARA CSV DE ESTADOS DETALLADOS
+// ============================================================================
+
+FILE *csv_estados = NULL;
+
+// Abrir archivo CSV de estados
+void inicializar_csv_estados() {
+    char nombre_archivo[128];
+    time_t ahora = time(NULL);
+    struct tm *t = localtime(&ahora);
+    strftime(nombre_archivo, sizeof(nombre_archivo), "estados_%Y%m%d_%H%M%S.csv", t);
+
+    csv_estados = fopen(nombre_archivo, "w");
+    if (!csv_estados) {
+        printf("❌ ERROR: No se pudo crear archivo de estados: %s\n", nombre_archivo);
+        perror("Detalle del error");
+        return;
+    }
+
+    // Encabezado
+    fprintf(csv_estados, "Tiempo,ID,Posicion,Velocidad,Aceleracion,EstadoVehiculo,Semaforo\n");
+    fflush(csv_estados);
+
+    printf("✅ Archivo de estados creado: %s\n", nombre_archivo);
+}
+
+// Registrar estado de vehículo
+void registrar_estado_vehiculo(Vehiculo* v) {
+    if (!csv_estados || !v) return;
+
+    fprintf(csv_estados, "%.2f,%d,%.2f,%.2f,%.2f,%s,%s\n",
+            calle.tiempo_actual,
+            v->id,
+            v->posicion,
+            v->velocidad,
+            v->aceleracion,
+            estado_str(v->estado),
+            color_semaforo(semaforo.estado));
+    fflush(csv_estados);
+}
+
+// Cerrar CSV de estados
+void cerrar_csv_estados() {
+    if (csv_estados) {
+        fclose(csv_estados);
+        csv_estados = NULL;
+        printf("✅ Archivo de estados cerrado correctamente.\n");
+    }
+}
+
+
 // ============================================================================
 // FUNCIÓN PRINCIPAL MEJORADA Y ESCALABLE
 // ============================================================================
@@ -854,6 +907,8 @@ void procesar_eventos_escalable() {
                 }
             }
             
+            registrar_estado_vehiculo(v);
+
             // VERIFICAR SALIDA DEL SISTEMA
             if (v->posicion >= config.longitud_total) {
                 v->tiempo_salida = calle.tiempo_actual;
@@ -1340,11 +1395,17 @@ int main() {
     // Inicializar sistema
     inicializar_sistema();
     
+    // Inicializar CSV de estados
+    inicializar_csv_estados();
+
     // Ejecutar simulación
     printf("Iniciando simulación...\n\n");
     clock_t inicio = clock();
     
     procesar_eventos_escalable();
+
+    // Cerrar CSV de estados
+    cerrar_csv_estados();
     
     clock_t fin = clock();
     double tiempo_ejecucion = ((double)(fin - inicio)) / CLOCKS_PER_SEC;

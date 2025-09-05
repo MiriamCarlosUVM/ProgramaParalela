@@ -1,16 +1,20 @@
+    ,  Casos minimos (1-3) Un coche   calle minima   semaforo al inicio   max_autos = 1   longitud_total = 50m   posicion_semaforo = 10m
+
 ID,Entrada,Semaforo,Salida,Detenido,VelProm
 # ESTADISTICAS_GENERALES
-TiempoTotal,7.05
+TiempoTotal (s),7.05
 VehiculosCreados,1
 VehiculosCompletados,1
-CiclosSemaforo,0
-TiempoPromedio,7.05
-VelocidadPromedio,7.09
-TiempoDetenidoPromedio,0.00
-Eficiencia,70.9
+CiclosSemaforo (VERDE-VERDE),0
+TiempoPromedio (s),7.05
+VelocidadPromedio (m/s),7.09
+TiempoDetenidoPromedio (s),0.00
+Eficiencia (%),70.9
 # DATOS_VEHICULOS
-ID,Entrada,Semaforo,Salida,Detenido,VelProm
+ID,Entrada,Semaforo (s),Salida (s),Detenido (s),VelProm (m/s)
 1,0.00,2.90,7.05,0.00,7.09
+
+
 
 
 

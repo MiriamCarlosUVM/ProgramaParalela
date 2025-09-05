@@ -470,13 +470,13 @@ void imprimir_estadisticas_finales(Vehiculo** todos_vehiculos, int total) {
     printf("Vehiculos completados: %d\n", calle.total_vehiculos_completados);
     printf("Ciclos de Semaforo: %d\n", semaforo.ciclos_completados);
 
-    // 🔹 Crear nombre de archivo con fecha y hora
+    //  Crear nombre de archivo con fecha y hora
     char nombre_archivo[128];
     time_t ahora = time(NULL);
     struct tm *t = localtime(&ahora);
     strftime(nombre_archivo, sizeof(nombre_archivo), "resultados_%Y%m%d_%H%M%S.csv", t);
 
-    // 🔹 Abrir archivo CSV
+    //  Abrir archivo CSV
     FILE *csv = fopen(nombre_archivo, "w");
     if (!csv) {
         printf("❌ ERROR: No se pudo crear archivo CSV: %s\n", nombre_archivo);
@@ -515,17 +515,17 @@ void imprimir_estadisticas_finales(Vehiculo** todos_vehiculos, int total) {
         printf("Eficiencia del sistema: %.1f%%\n", 
                (velocidad_promedio_total / params.velocidad_maxima) * 100.0);
 
-        // 🔹 Guardar estadísticas generales en CSV
+        //  Guardar estadísticas generales en CSV
         if (csv) {
             fprintf(csv, "# ESTADISTICAS_GENERALES\n");
-            fprintf(csv, "TiempoTotal,%.2f\n", calle.tiempo_actual);
+            fprintf(csv, "TiempoTotal (s),%.2f\n", calle.tiempo_actual);
             fprintf(csv, "VehiculosCreados,%d\n", calle.total_vehiculos_creados);
             fprintf(csv, "VehiculosCompletados,%d\n", calle.total_vehiculos_completados);
-            fprintf(csv, "CiclosSemaforo,%d\n", semaforo.ciclos_completados);
-            fprintf(csv, "TiempoPromedio,%.2f\n", tiempo_promedio);
-            fprintf(csv, "VelocidadPromedio,%.2f\n", velocidad_promedio_total);
-            fprintf(csv, "TiempoDetenidoPromedio,%.2f\n", tiempo_detenido_promedio);
-            fprintf(csv, "Eficiencia,%.1f\n", (velocidad_promedio_total / params.velocidad_maxima) * 100.0);
+            fprintf(csv, "CiclosSemaforo (Verde-Verde 1 ciclo),%d\n", semaforo.ciclos_completados);
+            fprintf(csv, "TiempoPromedio (s),%.2f\n", tiempo_promedio);
+            fprintf(csv, "VelocidadPromedio (m/s),%.2f\n", velocidad_promedio_total);
+            fprintf(csv, "TiempoDetenidoPromedio (s),%.2f\n", tiempo_detenido_promedio);
+            fprintf(csv, "Eficiencia (%),%.1f\n", (velocidad_promedio_total / params.velocidad_maxima) * 100.0);
             fprintf(csv, "# DATOS_VEHICULOS\n");
             fprintf(csv, "ID,Entrada,Semaforo,Salida,Detenido,VelProm\n");
         }
@@ -535,7 +535,7 @@ void imprimir_estadisticas_finales(Vehiculo** todos_vehiculos, int total) {
     printf("ID | Entrada | Semaforo | Salida | Detenido | Vel.Prom\n");
     printf("---|---------|----------|--------|----------|----------\n");
 
-    // 🔹 Guardar TODOS los vehiculos completados
+    //  Guardar TODOS los vehiculos completados
     int contador_csv = 0;
     for (int i = 0; i < total; i++) {
         if (todos_vehiculos[i] && todos_vehiculos[i]->estado == SALIENDO) {
@@ -563,7 +563,7 @@ void imprimir_estadisticas_finales(Vehiculo** todos_vehiculos, int total) {
         }
     }
 
-    // 🔹 Cerrar CSV
+    //  Cerrar CSV
     if (csv) {
         fclose(csv);
         printf("\n✅ Resultados guardados en %s (%d vehiculos)\n", nombre_archivo, contador_csv);
@@ -1352,9 +1352,9 @@ int main() {
     printf("\n=== METRICAS DE RENDIMIENTO ===\n");
     printf("Tiempo de ejecucion: %.3f segundos\n", tiempo_ejecucion);
     printf("Tiempo simulado: %.2f segundos\n", calle.tiempo_actual);
-    printf("Factor de aceleración: %.1fx\n", calle.tiempo_actual / tiempo_ejecucion);
+    printf("Factor de aceleracion: %.1fx\n", calle.tiempo_actual / tiempo_ejecucion);
     printf("Vehiculos procesados: %d\n", calle.total_vehiculos_creados);
-    printf("Throughput: %.1f vehiculos/segundo de simulación\n", 
+    printf("Throughput: %.1f vehiculos/segundo de simulacion\n", 
            (double)calle.total_vehiculos_completados / calle.tiempo_actual);
     
     // Limpiar sistema

@@ -1,3 +1,5 @@
+, Un coche   calle minima   semaforo a la mitad   max_autos = 1   longitud_total = 50    posicion_semaforo = 25
+
 ID,Entrada,Semaforo,Salida,Detenido,VelProm
 # ESTADISTICAS_GENERALES
 TiempoTotal,7.05

@@ -1519,7 +1519,10 @@ int main() {
     printf("- Archivos CSV con datos completos\n\n");
     
     // Configurar OpenMP
-    omp_set_num_threads(omp_get_max_threads());
+    int num_threads = fmin(4, omp_get_max_threads());
+    omp_set_num_threads(num_threads);
+    
+    printf("Configurando OpenMP con %d threads\n", num_threads);
     
     // Configuración y validación
     configurar_interseccion();
@@ -1533,17 +1536,12 @@ int main() {
     inicializar_sistema();
     inicializar_csv_estados();
     
-    // Ejecutar simulación
-    printf("Iniciando simulación paralela...\n\n");
+    // Ejecutar simulación de forma secuencial con paralelismo controlado
+    printf("Iniciando simulación de intersección...\n\n");
     clock_t inicio = clock();
     
-    #pragma omp parallel
-    {
-        #pragma omp single
-        {
-            procesar_eventos_interseccion_paralelo();
-        }
-    }
+    // Ejecutar sin pragma omp parallel
+    procesar_eventos_interseccion_paralelo();
     
     clock_t fin = clock();
     double tiempo_ejecucion = ((double)(fin - inicio)) / CLOCKS_PER_SEC;

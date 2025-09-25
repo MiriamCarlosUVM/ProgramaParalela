@@ -6,49 +6,58 @@
 #include <omp.h>
 
 // ============================================================================
-// DEFINICIÓN DE CONSTANTES
+// DEFINICIÓN DE CONSTANTES PARA INTERSECCIÓN
 // ============================================================================
 
-#define ENTRADA 0
-#define SALIDA 1
+#define ENTRADA_NORTE 0
+#define ENTRADA_ESTE 1
 #define ACTUALIZACION_VEHICULO 2
+#define SALIDA_SUR 3
+#define SALIDA_OESTE 4
 
-// Solo 2 direcciones de tráfico
+// Direcciones de movimiento
 typedef enum {
-    NORTE_SUR = 0,    // Calle vertical: Norte → Sur
-    OESTE_ESTE = 1    // Calle horizontal: Oeste → Este
+    NORTE_A_SUR,
+    ESTE_A_OESTE
 } DireccionCalle;
 
-// Configuración de intersección
+// Estados de la intersección
+typedef enum {
+    NORTE_SUR_VERDE,
+    ESTE_OESTE_VERDE,
+    TRANSICION
+} EstadoInterseccion;
+
+// Parámetros configurables de simulación
 typedef struct {
-    double longitud_calle_ns;      // Norte-Sur
-    double longitud_calle_oe;      // Oeste-Este
-    double ancho_interseccion;     // Zona de cruce
+    int num_secciones;
+    double longitud_seccion;
+    double longitud_calle_ns;     // Norte-Sur
+    double longitud_calle_eo;     // Este-Oeste
+    double posicion_interseccion; // Posición de la intersección en ambas calles
     double paso_simulacion;
     int max_autos_por_calle;
     double intervalo_entrada_vehiculos;
     double tiempo_limite_simulacion;
-    
-    // Posiciones de semáforos (antes de la intersección)
-    double posicion_semaforo_ns;   // En calle Norte-Sur
-    double posicion_semaforo_oe;   // En calle Oeste-Este
-} ConfiguracionInterseccion;
+    double ancho_interseccion;    // Tamaño de la zona de conflicto
+} ConfiguracionSimulacion;
 
 // Configuración por defecto
-ConfiguracionInterseccion config = {
+ConfiguracionSimulacion config = {
+    .num_secciones = 20,
+    .longitud_seccion = 10.0,
     .longitud_calle_ns = 200.0,
-    .longitud_calle_oe = 200.0,
-    .ancho_interseccion = 20.0,
+    .longitud_calle_eo = 200.0,
+    .posicion_interseccion = 100.0,
     .paso_simulacion = 0.05,
-    .max_autos_por_calle = 30,
-    .intervalo_entrada_vehiculos = 2.5,
+    .max_autos_por_calle = 25,
+    .intervalo_entrada_vehiculos = 2.0,
     .tiempo_limite_simulacion = 0.0,
-    .posicion_semaforo_ns = 80.0,   // 80m desde entrada norte
-    .posicion_semaforo_oe = 80.0    // 80m desde entrada oeste
+    .ancho_interseccion = 8.0
 };
 
 // ============================================================================
-// ESTRUCTURAS PARA INTERSECCIÓN SIMPLE
+// ENUMERACIONES Y ESTRUCTURAS MEJORADAS PARA INTERSECCIÓN
 // ============================================================================
 
 typedef enum {
@@ -58,218 +67,320 @@ typedef enum {
     DESACELERANDO,
     FRENANDO,
     DETENIDO,
-    EN_INTERSECCION,
+    ESPERANDO_PASO,
+    CRUZANDO_INTERSECCION,
     SALIENDO
 } EstadoVehiculo;
 
-typedef enum {
-    NS_VERDE,    // Norte-Sur puede pasar
-    OE_VERDE     // Oeste-Este puede pasar
-} EstadoSemaforo;
-
-// Vehículo simplificado
 typedef struct {
     int id;
-    DireccionCalle calle;        // En qué calle está (NS u OE)
-    double posicion;             // Posición en su calle
+    DireccionCalle direccion;
+    double posicion;
+    int seccion;
     double velocidad;
     double aceleracion;
     EstadoVehiculo estado;
+    EstadoVehiculo estado_anterior;
     
-    // Coordenadas absolutas para detección en intersección
-    double coord_x, coord_y;
-    
-    // Métricas básicas
+    // Métricas detalladas
     double tiempo_entrada;
-    double tiempo_llegada_semaforo;
-    double tiempo_salida;
+    double tiempo_en_estado;
+    double tiempo_total_frenado;
     double tiempo_total_detenido;
+    double tiempo_esperando_interseccion;
+    double tiempo_cruzando;
+    double tiempo_lento;
+    int eventos_reanudacion;
+    double tiempo_llegada_interseccion;
+    double tiempo_salida;
+    double velocidad_promedio;
     double distancia_recorrida;
     
+    // Campos para debugging y paralelismo
     int actualizaciones_count;
+    double ultimo_cambio_estado;
+    int thread_id;  // ID del thread que procesa este vehículo
 } Vehiculo;
 
-// Sistema para cada calle (solo 2)
 typedef struct {
-    Vehiculo** vehiculos;
-    int num_vehiculos_activos;
-    int capacidad_vehiculos;
-    int total_vehiculos_creados;
-    int total_vehiculos_completados;
-    
-    // Lock para acceso seguro
-    omp_lock_t lock;
-} SistemaCalle;
+    double tiempo;
+    int tipo;
+    int id_auto;
+    DireccionCalle direccion;
+    Vehiculo* vehiculo;
+    int prioridad;
+} Evento;
 
-// Sistema de intersección completo
+typedef struct Nodo {
+    Evento evento;
+    struct Nodo* siguiente;
+    struct Nodo* anterior;
+} Nodo;
+
 typedef struct {
-    SistemaCalle calles[2];  // [0]=Norte-Sur, [1]=Oeste-Este
+    Nodo* inicio;
+    Nodo* fin;
+    int size;
+    int max_size_alcanzado;
+    omp_lock_t lock; // Lock para acceso concurrente
+} ColaEventos;
+
+// Sistema escalable con arrays dinámicos para ambas calles
+typedef struct {
+    Vehiculo** vehiculos_norte_sur;
+    Vehiculo** vehiculos_este_oeste;
+    int num_vehiculos_ns;
+    int num_vehiculos_eo;
+    int capacidad_vehiculos_ns;
+    int capacidad_vehiculos_eo;
     double tiempo_actual;
     
+    // Estadísticas del sistema por calle
+    int total_vehiculos_creados_ns;
+    int total_vehiculos_creados_eo;
+    int total_vehiculos_completados_ns;
+    int total_vehiculos_completados_eo;
+    double tiempo_promedio_recorrido_ns;
+    double tiempo_promedio_recorrido_eo;
+    
     // Control de intersección
-    Vehiculo** vehiculos_en_interseccion;
-    int num_en_interseccion;
-    int capacidad_interseccion;
+    int vehiculos_en_interseccion;
+    DireccionCalle direccion_actual_cruzando;
+    double ultimo_cambio_interseccion;
+    
+    // Control de memoria y paralelismo
+    size_t memoria_utilizada;
+    omp_lock_t lock_sistema;
     omp_lock_t lock_interseccion;
 } SistemaInterseccion;
-
-// Control de semáforo simple
-typedef struct {
-    EstadoSemaforo estado;
-    double ultimo_cambio;
-    double duracion_ns_verde;      // Tiempo verde para Norte-Sur
-    double duracion_oe_verde;      // Tiempo verde para Oeste-Este
-    double duracion_amarillo;      // Transición
-    int ciclos_completados;
-    omp_lock_t lock;
-} ControlSemaforo;
-
-// ============================================================================
-// VARIABLES GLOBALES
-// ============================================================================
-
-SistemaInterseccion interseccion = {0};
-ControlSemaforo semaforo = {
-    .estado = NS_VERDE,
-    .ultimo_cambio = 0.0,
-    .duracion_ns_verde = 30.0,
-    .duracion_oe_verde = 25.0,
-    .duracion_amarillo = 4.0,
-    .ciclos_completados = 0
-};
 
 typedef struct {
     double velocidad_maxima;
     double aceleracion_maxima;
     double desaceleracion_maxima;
+    double desaceleracion_suave;
     double distancia_seguridad_min;
     double longitud_vehiculo;
-} ParametrosTrafico;
+    double tiempo_reaccion;
+    double factor_congestion;
+    double tiempo_minimo_cruce; // Tiempo mínimo para cruzar intersección
+} ParametrosSimulacion;
 
-ParametrosTrafico params = {
-    .velocidad_maxima = 12.0,
+typedef struct {
+    double ultimo_cambio;
+    EstadoInterseccion estado;
+    double duracion_ns_verde;
+    double duracion_eo_verde;
+    double duracion_transicion;
+    int ciclos_completados;
+    omp_lock_t lock; // Lock para el semáforo
+} ControlInterseccion;
+
+// ============================================================================
+// VARIABLES GLOBALES MEJORADAS CON LOCKS
+// ============================================================================
+
+SistemaInterseccion interseccion = {0};
+ParametrosSimulacion params = {
+    .velocidad_maxima = 10.0,
     .aceleracion_maxima = 2.5,
     .desaceleracion_maxima = -4.0,
+    .desaceleracion_suave = -2.0,
     .distancia_seguridad_min = 4.0,
-    .longitud_vehiculo = 5.0
+    .longitud_vehiculo = 5.0,
+    .tiempo_reaccion = 1.0,
+    .factor_congestion = 0.8,
+    .tiempo_minimo_cruce = 2.0
 };
 
+ControlInterseccion semaforo = {
+    .ultimo_cambio = 0.0,
+    .estado = NORTE_SUR_VERDE,
+    .duracion_ns_verde = 30.0,
+    .duracion_eo_verde = 25.0,
+    .duracion_transicion = 3.0,
+    .ciclos_completados = 0
+};
+
+// Variables globales para estadísticas thread-safe
+int eventos_procesados = 0;
+omp_lock_t lock_eventos;
+
 // ============================================================================
-// FUNCIONES DE INICIALIZACIÓN
+// FUNCIONES DE GESTIÓN DE MEMORIA Y PARALELISMO
 // ============================================================================
 
-void inicializar_sistema() {
-    printf("Inicializando sistema de 2 calles con OpenMP...\n");
-    
-    // Inicializar locks
-    omp_init_lock(&semaforo.lock);
+void inicializar_locks() {
+    omp_init_lock(&interseccion.lock_sistema);
     omp_init_lock(&interseccion.lock_interseccion);
+    omp_init_lock(&semaforo.lock);
+    omp_init_lock(&lock_eventos);
+}
+
+void destruir_locks() {
+    omp_destroy_lock(&interseccion.lock_sistema);
+    omp_destroy_lock(&interseccion.lock_interseccion);
+    omp_destroy_lock(&semaforo.lock);
+    omp_destroy_lock(&lock_eventos);
+}
+
+void inicializar_sistema() {
+    interseccion.capacidad_vehiculos_ns = config.max_autos_por_calle + 10;
+    interseccion.capacidad_vehiculos_eo = config.max_autos_por_calle + 10;
     
-    // Inicializar cada calle (solo 2)
-    for (int c = 0; c < 2; c++) {
-        SistemaCalle* calle = &interseccion.calles[c];
-        omp_init_lock(&calle->lock);
-        
-        calle->capacidad_vehiculos = config.max_autos_por_calle + 5;
-        calle->vehiculos = (Vehiculo**)calloc(calle->capacidad_vehiculos, sizeof(Vehiculo*));
-        
-        if (!calle->vehiculos) {
-            fprintf(stderr, "ERROR: No se pudo asignar memoria para calle %d\n", c);
-            exit(1);
-        }
-        
-        calle->num_vehiculos_activos = 0;
-        calle->total_vehiculos_creados = 0;
-        calle->total_vehiculos_completados = 0;
-    }
+    interseccion.vehiculos_norte_sur = (Vehiculo**)calloc(interseccion.capacidad_vehiculos_ns, sizeof(Vehiculo*));
+    interseccion.vehiculos_este_oeste = (Vehiculo**)calloc(interseccion.capacidad_vehiculos_eo, sizeof(Vehiculo*));
     
-    // Inicializar zona de intersección
-    interseccion.capacidad_interseccion = 10;
-    interseccion.vehiculos_en_interseccion = (Vehiculo**)calloc(
-        interseccion.capacidad_interseccion, sizeof(Vehiculo*));
-    
-    if (!interseccion.vehiculos_en_interseccion) {
-        fprintf(stderr, "ERROR: No se pudo asignar memoria para intersección\n");
+    if (!interseccion.vehiculos_norte_sur || !interseccion.vehiculos_este_oeste) {
+        fprintf(stderr, "ERROR: No se pudo asignar memoria para vehículos\n");
         exit(1);
     }
     
-    printf("Sistema inicializado: 2 calles, %d threads\n", omp_get_max_threads());
+    interseccion.memoria_utilizada = sizeof(SistemaInterseccion) + 
+                                    (interseccion.capacidad_vehiculos_ns + interseccion.capacidad_vehiculos_eo) * sizeof(Vehiculo*);
+    
+    inicializar_locks();
+    
+    printf("Sistema de intersección inicializado:\n");
+    printf("- Capacidad Norte-Sur: %d vehículos\n", interseccion.capacidad_vehiculos_ns);
+    printf("- Capacidad Este-Oeste: %d vehículos\n", interseccion.capacidad_vehiculos_eo);
+    printf("- Memoria: %zu bytes\n", interseccion.memoria_utilizada);
+    printf("- Threads disponibles: %d\n", omp_get_max_threads());
 }
 
 void limpiar_sistema() {
-    omp_destroy_lock(&semaforo.lock);
-    omp_destroy_lock(&interseccion.lock_interseccion);
+    destruir_locks();
     
-    for (int c = 0; c < 2; c++) {
-        SistemaCalle* calle = &interseccion.calles[c];
-        omp_destroy_lock(&calle->lock);
-        if (calle->vehiculos) {
-            free(calle->vehiculos);
+    if (interseccion.vehiculos_norte_sur) {
+        free(interseccion.vehiculos_norte_sur);
+        interseccion.vehiculos_norte_sur = NULL;
+    }
+    if (interseccion.vehiculos_este_oeste) {
+        free(interseccion.vehiculos_este_oeste);
+        interseccion.vehiculos_este_oeste = NULL;
+    }
+    printf("Sistema de intersección limpiado.\n");
+}
+
+// ============================================================================
+// FUNCIONES DE CONTROL DE TRÁFICO PARA INTERSECCIÓN
+// ============================================================================
+
+Vehiculo* encontrar_vehiculo_adelante_interseccion(double posicion, DireccionCalle direccion, Vehiculo* vehiculo_actual) {
+    Vehiculo* mas_cercano = NULL;
+    double distancia_minima = (direccion == NORTE_A_SUR) ? config.longitud_calle_ns : config.longitud_calle_eo;
+    double rango_busqueda = 50.0;
+    
+    Vehiculo** vehiculos_calle;
+    int num_vehiculos;
+    
+    if (direccion == NORTE_A_SUR) {
+        vehiculos_calle = interseccion.vehiculos_norte_sur;
+        num_vehiculos = interseccion.num_vehiculos_ns;
+    } else {
+        vehiculos_calle = interseccion.vehiculos_este_oeste;
+        num_vehiculos = interseccion.num_vehiculos_eo;
+    }
+    
+    for (int i = 0; i < num_vehiculos; i++) {
+        Vehiculo* v = vehiculos_calle[i];
+        
+        if (v == vehiculo_actual || !v || v->direccion != direccion) continue;
+        
+        double diferencia_pos = v->posicion - posicion;
+        if (diferencia_pos > 0 && diferencia_pos <= rango_busqueda) {
+            if (diferencia_pos < distancia_minima) {
+                distancia_minima = diferencia_pos;
+                mas_cercano = v;
+            }
         }
     }
     
-    if (interseccion.vehiculos_en_interseccion) {
-        free(interseccion.vehiculos_en_interseccion);
+    return mas_cercano;
+}
+
+int puede_cruzar_interseccion(Vehiculo* vehiculo) {
+    omp_set_lock(&interseccion.lock_interseccion);
+    
+    int puede_cruzar = 0;
+    double pos_interseccion = config.posicion_interseccion;
+    double inicio_interseccion = pos_interseccion - config.ancho_interseccion/2;
+    double fin_interseccion = pos_interseccion + config.ancho_interseccion/2;
+    
+    // Verificar si el vehículo está cerca de la intersección
+    if (vehiculo->posicion >= inicio_interseccion - 5.0 && vehiculo->posicion <= inicio_interseccion) {
+        // Verificar semáforo
+        omp_set_lock(&semaforo.lock);
+        EstadoInterseccion estado_semaforo = semaforo.estado;
+        omp_unset_lock(&semaforo.lock);
+        
+        if ((vehiculo->direccion == NORTE_A_SUR && estado_semaforo == NORTE_SUR_VERDE) ||
+            (vehiculo->direccion == ESTE_A_OESTE && estado_semaforo == ESTE_OESTE_VERDE)) {
+            
+            // Verificar conflictos con vehículos en intersección
+            if (interseccion.vehiculos_en_interseccion == 0 || 
+                interseccion.direccion_actual_cruzando == vehiculo->direccion) {
+                puede_cruzar = 1;
+            }
+        }
     }
     
-    printf("Sistema limpiado\n");
+    omp_unset_lock(&interseccion.lock_interseccion);
+    return puede_cruzar;
 }
 
-// ============================================================================
-// FUNCIONES DE COORDENADAS
-// ============================================================================
-
-void calcular_coordenadas_absolutas(Vehiculo* v) {
-    if (v->calle == NORTE_SUR) {
-        // Calle vertical: Norte → Sur
-        v->coord_x = config.longitud_calle_oe / 2.0;  // En el centro horizontal
-        v->coord_y = v->posicion;                     // Posición en Y
-    } else {
-        // Calle horizontal: Oeste → Este  
-        v->coord_x = v->posicion;                     // Posición en X
-        v->coord_y = config.longitud_calle_ns / 2.0; // En el centro vertical
-    }
-}
-
-int esta_en_interseccion(Vehiculo* v) {
-    double centro_x = config.longitud_calle_oe / 2.0;
-    double centro_y = config.longitud_calle_ns / 2.0;
-    double radio = config.ancho_interseccion / 2.0;
+void entrar_interseccion(Vehiculo* vehiculo) {
+    omp_set_lock(&interseccion.lock_interseccion);
     
-    return (fabs(v->coord_x - centro_x) <= radio && 
-            fabs(v->coord_y - centro_y) <= radio);
-}
-
-double distancia_al_semaforo(Vehiculo* v) {
-    if (v->calle == NORTE_SUR) {
-        return config.posicion_semaforo_ns - v->posicion;
-    } else {
-        return config.posicion_semaforo_oe - v->posicion;
+    if (interseccion.vehiculos_en_interseccion == 0) {
+        interseccion.direccion_actual_cruzando = vehiculo->direccion;
     }
+    
+    interseccion.vehiculos_en_interseccion++;
+    vehiculo->estado = CRUZANDO_INTERSECCION;
+    vehiculo->tiempo_llegada_interseccion = interseccion.tiempo_actual;
+    
+    omp_unset_lock(&interseccion.lock_interseccion);
+}
+
+void salir_interseccion(Vehiculo* vehiculo) {
+    omp_set_lock(&interseccion.lock_interseccion);
+    
+    interseccion.vehiculos_en_interseccion--;
+    vehiculo->tiempo_cruzando += interseccion.tiempo_actual - vehiculo->tiempo_llegada_interseccion;
+    
+    if (interseccion.vehiculos_en_interseccion == 0) {
+        interseccion.ultimo_cambio_interseccion = interseccion.tiempo_actual;
+    }
+    
+    omp_unset_lock(&interseccion.lock_interseccion);
 }
 
 // ============================================================================
-// CONTROL DE SEMÁFOROS
+// CONTROL DEL SEMÁFORO INTELIGENTE
 // ============================================================================
 
-void actualizar_semaforo(double tiempo) {
+void actualizar_semaforo_interseccion(double tiempo_actual) {
     omp_set_lock(&semaforo.lock);
     
-    double ciclo_total = semaforo.duracion_ns_verde + semaforo.duracion_amarillo +
-                        semaforo.duracion_oe_verde + semaforo.duracion_amarillo;
-    double t_ciclo = fmod(tiempo, ciclo_total);
+    double ciclo_total = semaforo.duracion_ns_verde + semaforo.duracion_eo_verde + 2 * semaforo.duracion_transicion;
+    double t_ciclo = fmod(tiempo_actual, ciclo_total);
     
-    EstadoSemaforo estado_anterior = semaforo.estado;
+    EstadoInterseccion estado_anterior = semaforo.estado;
     
-    if (t_ciclo < semaforo.duracion_ns_verde + semaforo.duracion_amarillo) {
-        semaforo.estado = NS_VERDE;
+    if (t_ciclo < semaforo.duracion_ns_verde) {
+        semaforo.estado = NORTE_SUR_VERDE;
+    } else if (t_ciclo < semaforo.duracion_ns_verde + semaforo.duracion_transicion) {
+        semaforo.estado = TRANSICION;
+    } else if (t_ciclo < semaforo.duracion_ns_verde + semaforo.duracion_transicion + semaforo.duracion_eo_verde) {
+        semaforo.estado = ESTE_OESTE_VERDE;
     } else {
-        semaforo.estado = OE_VERDE;
+        semaforo.estado = TRANSICION;
     }
     
     if (estado_anterior != semaforo.estado) {
-        semaforo.ultimo_cambio = tiempo;
-        if (semaforo.estado == NS_VERDE) {
+        semaforo.ultimo_cambio = tiempo_actual;
+        if (semaforo.estado == NORTE_SUR_VERDE && estado_anterior != NORTE_SUR_VERDE) {
             semaforo.ciclos_completados++;
         }
     }
@@ -277,162 +388,329 @@ void actualizar_semaforo(double tiempo) {
     omp_unset_lock(&semaforo.lock);
 }
 
-int puede_pasar_semaforo(Vehiculo* v) {
-    int puede_pasar = 0;
+// ============================================================================
+// GESTIÓN DE EVENTOS THREAD-SAFE
+// ============================================================================
+
+void inicializar_cola_eventos(ColaEventos* cola) {
+    omp_init_lock(&cola->lock);
+    cola->inicio = NULL;
+    cola->fin = NULL;
+    cola->size = 0;
+    cola->max_size_alcanzado = 0;
+}
+
+void destruir_cola_eventos(ColaEventos* cola) {
+    omp_destroy_lock(&cola->lock);
+}
+
+void insertar_evento_thread_safe(ColaEventos* cola, Evento evento) {
+    Nodo* nuevo = (Nodo*)malloc(sizeof(Nodo));
+    if (!nuevo) return;
     
-    omp_set_lock(&semaforo.lock);
-    if (v->calle == NORTE_SUR) {
-        puede_pasar = (semaforo.estado == NS_VERDE);
+    nuevo->evento = evento;
+    nuevo->siguiente = nuevo->anterior = NULL;
+    
+    omp_set_lock(&cola->lock);
+    
+    if (!cola->inicio) {
+        cola->inicio = cola->fin = nuevo;
+    } else if (evento.tiempo >= cola->fin->evento.tiempo) {
+        nuevo->anterior = cola->fin;
+        if (cola->fin) cola->fin->siguiente = nuevo;
+        cola->fin = nuevo;
+        if (!cola->inicio) cola->inicio = nuevo;
+    } else if (evento.tiempo < cola->inicio->evento.tiempo) {
+        nuevo->siguiente = cola->inicio;
+        cola->inicio->anterior = nuevo;
+        cola->inicio = nuevo;
     } else {
-        puede_pasar = (semaforo.estado == OE_VERDE);
+        Nodo* actual = cola->fin;
+        while (actual && actual->evento.tiempo > evento.tiempo) {
+            actual = actual->anterior;
+        }
+        
+        nuevo->siguiente = actual->siguiente;
+        nuevo->anterior = actual;
+        if (actual->siguiente) actual->siguiente->anterior = nuevo;
+        else cola->fin = nuevo;
+        actual->siguiente = nuevo;
     }
+    
+    cola->size++;
+    if (cola->size > cola->max_size_alcanzado) {
+        cola->max_size_alcanzado = cola->size;
+    }
+    
+    omp_unset_lock(&cola->lock);
+}
+
+Evento* obtener_siguiente_evento_thread_safe(ColaEventos* cola) {
+    omp_set_lock(&cola->lock);
+    
+    if (!cola->inicio) {
+        omp_unset_lock(&cola->lock);
+        return NULL;
+    }
+    
+    Nodo* nodo = cola->inicio;
+    Evento* evento = (Evento*)malloc(sizeof(Evento));
+    if (!evento) {
+        omp_unset_lock(&cola->lock);
+        return NULL;
+    }
+    
+    *evento = nodo->evento;
+    
+    cola->inicio = nodo->siguiente;
+    if (cola->inicio) {
+        cola->inicio->anterior = NULL;
+    } else {
+        cola->fin = NULL;
+    }
+    
+    free(nodo);
+    cola->size--;
+    
+    omp_unset_lock(&cola->lock);
+    return evento;
+}
+
+// ============================================================================
+// FUNCIONES DE REPORTES PARA INTERSECCIÓN
+// ============================================================================
+
+const char* estado_str(EstadoVehiculo estado) {
+    switch (estado) {
+        case ENTRANDO: return "ENTRANDO";
+        case ACELERANDO: return "ACELERANDO";
+        case VELOCIDAD_CONSTANTE: return "VEL_CONST";
+        case DESACELERANDO: return "DESACELERANDO";
+        case FRENANDO: return "FRENANDO";
+        case DETENIDO: return "DETENIDO";
+        case ESPERANDO_PASO: return "ESPERANDO";
+        case CRUZANDO_INTERSECCION: return "CRUZANDO";
+        case SALIENDO: return "SALIENDO";
+        default: return "DESCONOCIDO";
+    }
+}
+
+const char* estado_interseccion_str(EstadoInterseccion estado) {
+    switch (estado) {
+        case NORTE_SUR_VERDE: return "NS_VERDE";
+        case ESTE_OESTE_VERDE: return "EO_VERDE";
+        case TRANSICION: return "TRANSICION";
+        default: return "DESCONOCIDO";
+    }
+}
+
+void imprimir_estado_interseccion() {
+    omp_set_lock(&semaforo.lock);
+    EstadoInterseccion estado_sem = semaforo.estado;
     omp_unset_lock(&semaforo.lock);
     
-    return puede_pasar;
-}
-
-// ============================================================================
-// CONTROL DE INTERSECCIÓN
-// ============================================================================
-
-int verificar_colision_interseccion(Vehiculo* v) {
-    omp_set_lock(&interseccion.lock_interseccion);
+    omp_set_lock(&interseccion.lock_sistema);
+    printf("\n=== INTERSECCIÓN t=%.2f | %s | NS:%d EO:%d | En cruce:%d ===\n", 
+           interseccion.tiempo_actual, estado_interseccion_str(estado_sem),
+           interseccion.num_vehiculos_ns, interseccion.num_vehiculos_eo,
+           interseccion.vehiculos_en_interseccion);
     
-    int colision = 0;
-    for (int i = 0; i < interseccion.num_en_interseccion; i++) {
-        Vehiculo* otro = interseccion.vehiculos_en_interseccion[i];
-        if (otro && otro != v) {
-            double dist = sqrt(pow(v->coord_x - otro->coord_x, 2) + 
-                              pow(v->coord_y - otro->coord_y, 2));
-            if (dist < params.distancia_seguridad_min) {
-                colision = 1;
-                break;
-            }
+    // Mostrar algunos vehículos de cada calle
+    printf("NORTE-SUR:\n");
+    int mostrar_ns = fmin(interseccion.num_vehiculos_ns, 4);
+    for (int i = 0; i < mostrar_ns; i++) {
+        Vehiculo* v = interseccion.vehiculos_norte_sur[i];
+        if (v) {
+            printf("  ID:%2d Pos=%6.1fm Vel=%5.2fm/s %s T%d\n", 
+                   v->id, v->posicion, v->velocidad, estado_str(v->estado), v->thread_id);
         }
     }
     
-    omp_unset_lock(&interseccion.lock_interseccion);
-    return colision;
-}
-
-void agregar_a_interseccion(Vehiculo* v) {
-    omp_set_lock(&interseccion.lock_interseccion);
-    
-    if (interseccion.num_en_interseccion < interseccion.capacidad_interseccion) {
-        interseccion.vehiculos_en_interseccion[interseccion.num_en_interseccion++] = v;
-        v->estado = EN_INTERSECCION;
-    }
-    
-    omp_unset_lock(&interseccion.lock_interseccion);
-}
-
-void remover_de_interseccion(Vehiculo* v) {
-    omp_set_lock(&interseccion.lock_interseccion);
-    
-    for (int i = 0; i < interseccion.num_en_interseccion; i++) {
-        if (interseccion.vehiculos_en_interseccion[i] == v) {
-            interseccion.vehiculos_en_interseccion[i] = 
-                interseccion.vehiculos_en_interseccion[interseccion.num_en_interseccion - 1];
-            interseccion.vehiculos_en_interseccion[interseccion.num_en_interseccion - 1] = NULL;
-            interseccion.num_en_interseccion--;
-            break;
+    printf("ESTE-OESTE:\n");
+    int mostrar_eo = fmin(interseccion.num_vehiculos_eo, 4);
+    for (int i = 0; i < mostrar_eo; i++) {
+        Vehiculo* v = interseccion.vehiculos_este_oeste[i];
+        if (v) {
+            printf("  ID:%2d Pos=%6.1fm Vel=%5.2fm/s %s T%d\n", 
+                   v->id, v->posicion, v->velocidad, estado_str(v->estado), v->thread_id);
         }
     }
-    
-    omp_unset_lock(&interseccion.lock_interseccion);
+    omp_unset_lock(&interseccion.lock_sistema);
+    printf("\n");
 }
 
 // ============================================================================
-// LÓGICA DE MOVIMIENTO
+// ARCHIVOS CSV THREAD-SAFE
 // ============================================================================
 
-Vehiculo* encontrar_vehiculo_adelante(DireccionCalle calle_dir, double posicion, Vehiculo* vehiculo_actual) {
-    SistemaCalle* calle = &interseccion.calles[calle_dir];
-    Vehiculo* mas_cercano = NULL;
-    double distancia_minima = 1000.0;
+FILE *csv_estados = NULL;
+FILE *csv_interseccion = NULL;
+omp_lock_t lock_csv;
+
+void inicializar_csv_estados() {
+    omp_init_lock(&lock_csv);
     
-    omp_set_lock(&calle->lock);
+    char nombre_estados[128], nombre_interseccion[128];
+    time_t ahora = time(NULL);
+    struct tm *t = localtime(&ahora);
     
-    for (int i = 0; i < calle->num_vehiculos_activos; i++) {
-        Vehiculo* v = calle->vehiculos[i];
-        if (v && v != vehiculo_actual) {
-            double diferencia = v->posicion - posicion;
-            if (diferencia > 0 && diferencia < distancia_minima) {
-                distancia_minima = diferencia;
-                mas_cercano = v;
-            }
-        }
+    strftime(nombre_estados, sizeof(nombre_estados), "estados_interseccion_%Y%m%d_%H%M%S.csv", t);
+    strftime(nombre_interseccion, sizeof(nombre_interseccion), "interseccion_%Y%m%d_%H%M%S.csv", t);
+    
+    csv_estados = fopen(nombre_estados, "w");
+    csv_interseccion = fopen(nombre_interseccion, "w");
+    
+    if (csv_estados) {
+        fprintf(csv_estados, "Tiempo,ID,Direccion,Posicion,Velocidad,Estado,Semaforo,Thread\n");
+        fflush(csv_estados);
     }
     
-    omp_unset_lock(&calle->lock);
-    return mas_cercano;
+    if (csv_interseccion) {
+        fprintf(csv_interseccion, "Tiempo,Estado,VehiculosNS,VehiculosEO,EnCruce,DireccionCruzando\n");
+        fflush(csv_interseccion);
+    }
+    
+    printf("Archivos CSV creados: %s, %s\n", nombre_estados, nombre_interseccion);
 }
 
-void actualizar_vehiculo(Vehiculo* v, double dt) {
-    // Calcular coordenadas absolutas
-    calcular_coordenadas_absolutas(v);
+void registrar_estado_vehiculo_thread_safe(Vehiculo* v) {
+    if (!csv_estados || !v) return;
     
-    // Verificar si está en intersección
-    int en_interseccion = esta_en_interseccion(v);
+    omp_set_lock(&lock_csv);
+    omp_set_lock(&semaforo.lock);
+    EstadoInterseccion estado_sem = semaforo.estado;
+    omp_unset_lock(&semaforo.lock);
     
-    // Lógica de comportamiento según estado
-    if (v->estado == EN_INTERSECCION) {
-        if (!en_interseccion) {
-            // Saliendo de intersección
-            remover_de_interseccion(v);
+    fprintf(csv_estados, "%.2f,%d,%s,%.2f,%.2f,%s,%s,%d\n",
+            interseccion.tiempo_actual, v->id,
+            (v->direccion == NORTE_A_SUR) ? "NS" : "EO",
+            v->posicion, v->velocidad, estado_str(v->estado),
+            estado_interseccion_str(estado_sem), v->thread_id);
+    fflush(csv_estados);
+    
+    omp_unset_lock(&lock_csv);
+}
+
+void registrar_estado_interseccion() {
+    if (!csv_interseccion) return;
+    
+    omp_set_lock(&lock_csv);
+    omp_set_lock(&semaforo.lock);
+    EstadoInterseccion estado_sem = semaforo.estado;
+    omp_unset_lock(&semaforo.lock);
+    
+    omp_set_lock(&interseccion.lock_interseccion);
+    fprintf(csv_interseccion, "%.2f,%s,%d,%d,%d,%s\n",
+            interseccion.tiempo_actual,
+            estado_interseccion_str(estado_sem),
+            interseccion.num_vehiculos_ns,
+            interseccion.num_vehiculos_eo,
+            interseccion.vehiculos_en_interseccion,
+            (interseccion.vehiculos_en_interseccion > 0) ? 
+                ((interseccion.direccion_actual_cruzando == NORTE_A_SUR) ? "NS" : "EO") : "NINGUNA");
+    fflush(csv_interseccion);
+    omp_unset_lock(&interseccion.lock_interseccion);
+    
+    omp_unset_lock(&lock_csv);
+}
+
+void cerrar_csv_estados() {
+    omp_destroy_lock(&lock_csv);
+    if (csv_estados) {
+        fclose(csv_estados);
+        csv_estados = NULL;
+    }
+    if (csv_interseccion) {
+        fclose(csv_interseccion);
+        csv_interseccion = NULL;
+    }
+    printf("Archivos CSV cerrados.\n");
+}
+
+// ============================================================================
+// DECLARACIONES DE FUNCIONES
+// ============================================================================
+
+void generar_estadisticas_interseccion(Vehiculo** vehiculos_ns, Vehiculo** vehiculos_eo);
+void procesar_eventos_interseccion_paralelo(void);
+void configurar_interseccion(void);
+
+// ============================================================================
+// ACTUALIZACIÓN DE VEHÍCULOS CON PARALELISMO
+// ============================================================================
+
+void actualizar_vehiculo_interseccion(Vehiculo* v, double dt) {
+    if (!v || v->estado == SALIENDO) return;
+    
+    v->actualizaciones_count++;
+    v->thread_id = omp_get_thread_num();
+    
+    double velocidad_anterior = v->velocidad;
+    EstadoVehiculo estado_anterior = v->estado;
+    
+    double longitud_calle = (v->direccion == NORTE_A_SUR) ? config.longitud_calle_ns : config.longitud_calle_eo;
+    double pos_interseccion = config.posicion_interseccion;
+    double inicio_interseccion = pos_interseccion - config.ancho_interseccion/2;
+    double fin_interseccion = pos_interseccion + config.ancho_interseccion/2;
+    
+    // Lógica específica para intersección
+    if (v->posicion < inicio_interseccion - 10.0) {
+        // Comportamiento normal antes de la intersección
+        if (v->velocidad < params.velocidad_maxima - 0.2) {
             v->estado = ACELERANDO;
+            v->aceleracion = params.aceleracion_maxima;
         } else {
-            // Mantener velocidad en intersección
+            v->estado = VELOCIDAD_CONSTANTE;
             v->aceleracion = 0.0;
-            if (v->velocidad < params.velocidad_maxima * 0.8) {
-                v->aceleracion = params.aceleracion_maxima * 0.3;
-            }
         }
-    } else if (en_interseccion && v->estado != EN_INTERSECCION) {
-        // Intentando entrar a intersección
-        if (!verificar_colision_interseccion(v)) {
-            agregar_a_interseccion(v);
-        } else {
-            // Esperar - no puede entrar
-            v->estado = DETENIDO;
-            v->velocidad = 0.0;
-            v->aceleracion = 0.0;
-            v->tiempo_total_detenido += dt;
-        }
-    } else {
-        // Lógica normal de tráfico
         
-        // 1. Verificar vehículo adelante
-        Vehiculo* adelante = encontrar_vehiculo_adelante(v->calle, v->posicion, v);
+        // Verificar vehículo adelante
+        Vehiculo* adelante = encontrar_vehiculo_adelante_interseccion(v->posicion, v->direccion, v);
         if (adelante) {
             double distancia = adelante->posicion - v->posicion - params.longitud_vehiculo;
             if (distancia < params.distancia_seguridad_min * 1.5) {
-                v->estado = FRENANDO;
-                v->aceleracion = params.desaceleracion_maxima;
-            } else if (distancia < params.distancia_seguridad_min * 3.0) {
                 v->estado = DESACELERANDO;
-                v->aceleracion = params.desaceleracion_maxima * 0.5;
+                v->aceleracion = params.desaceleracion_suave;
             }
         }
         
-        // 2. Verificar semáforo
-        double dist_semaforo = distancia_al_semaforo(v);
-        if (dist_semaforo > 0 && dist_semaforo < 40.0) {
-            if (!puede_pasar_semaforo(v)) {
-                double distancia_frenado = (v->velocidad * v->velocidad) / 
-                                          (2.0 * fabs(params.desaceleracion_maxima));
-                if (distancia_frenado >= dist_semaforo - 2.0) {
-                    v->estado = FRENANDO;
-                    v->aceleracion = params.desaceleracion_maxima;
-                }
+    } else if (v->posicion >= inicio_interseccion - 10.0 && v->posicion < inicio_interseccion) {
+        // Aproximándose a la intersección
+        if (puede_cruzar_interseccion(v)) {
+            v->estado = ACELERANDO;
+            v->aceleracion = params.aceleracion_maxima * 0.8;
+        } else {
+            v->estado = ESPERANDO_PASO;
+            v->aceleracion = params.desaceleracion_maxima;
+            v->tiempo_esperando_interseccion += dt;
+            
+            if (v->velocidad <= 0.1) {
+                v->velocidad = 0.0;
+                v->estado = DETENIDO;
+                v->aceleracion = 0.0;
+                v->tiempo_total_detenido += dt;
             }
         }
         
-        // 3. Acelerar si no hay restricciones
-        if (v->estado != FRENANDO && v->estado != DESACELERANDO && 
-            v->estado != DETENIDO && v->velocidad < params.velocidad_maxima) {
+    } else if (v->posicion >= inicio_interseccion && v->posicion <= fin_interseccion) {
+        // En la intersección
+        if (v->estado != CRUZANDO_INTERSECCION) {
+            entrar_interseccion(v);
+        }
+        v->aceleracion = params.aceleracion_maxima * 0.6; // Velocidad controlada en intersección
+        
+    } else if (v->posicion > fin_interseccion) {
+        // Después de la intersección
+        if (v->estado == CRUZANDO_INTERSECCION) {
+            salir_interseccion(v);
+        }
+        
+        if (v->velocidad < params.velocidad_maxima - 0.2) {
             v->estado = ACELERANDO;
             v->aceleracion = params.aceleracion_maxima;
+        } else {
+            v->estado = VELOCIDAD_CONSTANTE;
+            v->aceleracion = 0.0;
         }
     }
     
@@ -443,455 +721,846 @@ void actualizar_vehiculo(Vehiculo* v, double dt) {
     
     if (nueva_velocidad < 0.1 && v->aceleracion < 0) {
         nueva_velocidad = 0.0;
+    }
+    
+    double nueva_posicion = v->posicion + nueva_velocidad * dt;
+    
+    // Verificar colisiones
+    Vehiculo* adelante = encontrar_vehiculo_adelante_interseccion(v->posicion, v->direccion, v);
+    int puede_avanzar = 1;
+    
+    if (adelante) {
+        double distancia_resultante = adelante->posicion - nueva_posicion - params.longitud_vehiculo;
+        if (distancia_resultante < params.distancia_seguridad_min * 0.8) {
+            puede_avanzar = 0;
+        }
+    }
+    
+    // Actualizar posición y velocidad
+    if (puede_avanzar) {
+        v->velocidad = nueva_velocidad;
+        v->posicion = nueva_posicion;
+        v->distancia_recorrida += nueva_velocidad * dt;
+    } else {
+        v->velocidad = 0.0;
         v->estado = DETENIDO;
+        v->aceleracion = 0.0;
         v->tiempo_total_detenido += dt;
     }
     
-    v->velocidad = nueva_velocidad;
-    v->posicion += v->velocidad * dt;
-    v->distancia_recorrida += v->velocidad * dt;
-    v->actualizaciones_count++;
+    // Registrar cambios de estado
+    if (estado_anterior != v->estado) {
+        v->tiempo_en_estado = 0.0;
+        v->ultimo_cambio_estado = interseccion.tiempo_actual;
+    } else {
+        v->tiempo_en_estado += dt;
+    }
     
-    // Verificar salida del sistema
-    double longitud_total = (v->calle == NORTE_SUR) ? 
-                           config.longitud_calle_ns : config.longitud_calle_oe;
+    // Estadísticas
+    if (v->estado == DETENIDO) v->tiempo_total_detenido += dt;
+    if (v->velocidad < params.velocidad_maxima / 2.0) v->tiempo_lento += dt;
+    if (v->velocidad > 0 && velocidad_anterior == 0) {
+        v->eventos_reanudacion++;
+    }
     
-    if (v->posicion >= longitud_total) {
-        v->estado = SALIENDO;
-        v->tiempo_salida = interseccion.tiempo_actual;
+    // Calcular velocidad promedio
+    if (v->actualizaciones_count > 0) {
+        double tiempo_transcurrido = interseccion.tiempo_actual - v->tiempo_entrada;
+        if (tiempo_transcurrido > 0) {
+            v->velocidad_promedio = v->distancia_recorrida / tiempo_transcurrido;
+        }
     }
 }
 
 // ============================================================================
-// CREACIÓN Y GESTIÓN DE VEHÍCULOS
+// FUNCIÓN PRINCIPAL DE SIMULACIÓN PARALELA
 // ============================================================================
 
-Vehiculo* crear_vehiculo(DireccionCalle calle_dir, int id) {
-    Vehiculo* v = (Vehiculo*)calloc(1, sizeof(Vehiculo));
-    if (!v) return NULL;
+void procesar_eventos_interseccion_paralelo() {
+    ColaEventos cola;
+    inicializar_cola_eventos(&cola);
     
-    v->id = id;
-    v->calle = calle_dir;
-    v->posicion = 0.0;
-    v->velocidad = 0.0;
-    v->estado = ENTRANDO;
-    v->aceleracion = params.aceleracion_maxima;
-    v->tiempo_entrada = interseccion.tiempo_actual;
+    // Arrays para todos los vehículos (para estadísticas finales)
+    Vehiculo** todos_vehiculos_ns = (Vehiculo**)calloc(config.max_autos_por_calle, sizeof(Vehiculo*));
+    Vehiculo** todos_vehiculos_eo = (Vehiculo**)calloc(config.max_autos_por_calle, sizeof(Vehiculo*));
     
-    return v;
-}
-
-void procesar_calle(DireccionCalle calle_dir) {
-    SistemaCalle* calle = &interseccion.calles[calle_dir];
-    static int contador_ids[2] = {1, 1001}; // IDs únicos por calle
-    static double ultimo_vehiculo[2] = {0.0, 0.0};
+    if (!todos_vehiculos_ns || !todos_vehiculos_eo) {
+        fprintf(stderr, "ERROR: No se pudo asignar memoria para arrays de vehículos\n");
+        return;
+    }
     
-    double dt = config.paso_simulacion;
+    // Eventos iniciales
+    int id_auto_ns = 1, id_auto_eo = 1001; // IDs diferentes para cada calle
     
-    // Crear nuevos vehículos si es necesario
-    if (calle->total_vehiculos_creados < config.max_autos_por_calle) {
-        if (interseccion.tiempo_actual - ultimo_vehiculo[calle_dir] >= 
-            config.intervalo_entrada_vehiculos) {
-            
-            // Verificar espacio para entrada
+    Evento entrada_ns = {0.0, ENTRADA_NORTE, id_auto_ns, NORTE_A_SUR, NULL, 1};
+    Evento entrada_eo = {0.5, ENTRADA_ESTE, id_auto_eo, ESTE_A_OESTE, NULL, 1};
+    
+    insertar_evento_thread_safe(&cola, entrada_ns);
+    insertar_evento_thread_safe(&cola, entrada_eo);
+    
+    double ultimo_reporte = 0.0;
+    int max_vehiculos_total = config.max_autos_por_calle * 2;
+    
+    printf("Iniciando simulación paralela de intersección...\n");
+    printf("Threads configurados: %d\n", omp_get_max_threads());
+    
+    // BUCLE PRINCIPAL PARALELO
+    while ((cola.size > 0 || interseccion.num_vehiculos_ns > 0 || interseccion.num_vehiculos_eo > 0) &&
+           (interseccion.total_vehiculos_completados_ns + interseccion.total_vehiculos_completados_eo) < max_vehiculos_total) {
+        
+        Evento* e = obtener_siguiente_evento_thread_safe(&cola);
+        
+        if (!e) {
+            // Verificar si hay vehículos activos
+            if (interseccion.num_vehiculos_ns > 0 || interseccion.num_vehiculos_eo > 0) {
+                printf("ADVERTENCIA: Sin eventos pero vehículos activos en t=%.2f\n", interseccion.tiempo_actual);
+            }
+            break;
+        }
+        
+        omp_set_lock(&interseccion.lock_sistema);
+        interseccion.tiempo_actual = e->tiempo;
+        omp_unset_lock(&interseccion.lock_sistema);
+        
+        actualizar_semaforo_interseccion(interseccion.tiempo_actual);
+        
+        omp_set_lock(&lock_eventos);
+        eventos_procesados++;
+        omp_unset_lock(&lock_eventos);
+        
+        // Protección contra bucles infinitos
+        if (eventos_procesados > max_vehiculos_total * 10000) {
+            printf("ADVERTENCIA: Demasiados eventos procesados. Verificando progreso...\n");
+            break;
+        }
+        
+        // PROCESAR ENTRADA NORTE-SUR
+        if (e->tipo == ENTRADA_NORTE && interseccion.total_vehiculos_creados_ns < config.max_autos_por_calle) {
+            // Verificar espacio
             int puede_entrar = 1;
-            omp_set_lock(&calle->lock);
-            for (int i = 0; i < calle->num_vehiculos_activos; i++) {
-                if (calle->vehiculos[i] && calle->vehiculos[i]->posicion < params.longitud_vehiculo + 3.0) {
+            omp_set_lock(&interseccion.lock_sistema);
+            for (int i = 0; i < interseccion.num_vehiculos_ns; i++) {
+                Vehiculo* v = interseccion.vehiculos_norte_sur[i];
+                if (v && v->posicion < params.longitud_vehiculo + params.distancia_seguridad_min) {
                     puede_entrar = 0;
                     break;
                 }
             }
-            omp_unset_lock(&calle->lock);
+            omp_unset_lock(&interseccion.lock_sistema);
             
             if (puede_entrar) {
-                Vehiculo* nuevo = crear_vehiculo(calle_dir, contador_ids[calle_dir]++);
-                if (nuevo) {
-                    omp_set_lock(&calle->lock);
-                    if (calle->num_vehiculos_activos < calle->capacidad_vehiculos) {
-                        calle->vehiculos[calle->num_vehiculos_activos++] = nuevo;
-                        calle->total_vehiculos_creados++;
-                        ultimo_vehiculo[calle_dir] = interseccion.tiempo_actual;
+                Vehiculo* v = (Vehiculo*)calloc(1, sizeof(Vehiculo));
+                if (v) {
+                    v->id = id_auto_ns;
+                    v->direccion = NORTE_A_SUR;
+                    v->estado = ENTRANDO;
+                    v->aceleracion = params.aceleracion_maxima;
+                    v->tiempo_entrada = e->tiempo;
+                    v->ultimo_cambio_estado = e->tiempo;
+                    v->thread_id = omp_get_thread_num();
+                    
+                    omp_set_lock(&interseccion.lock_sistema);
+                    todos_vehiculos_ns[interseccion.total_vehiculos_creados_ns] = v;
+                    interseccion.vehiculos_norte_sur[interseccion.num_vehiculos_ns++] = v;
+                    interseccion.total_vehiculos_creados_ns++;
+                    omp_unset_lock(&interseccion.lock_sistema);
+                    
+                    // Programar actualización
+                    Evento act = {e->tiempo + config.paso_simulacion, ACTUALIZACION_VEHICULO, v->id, NORTE_A_SUR, v, 0};
+                    insertar_evento_thread_safe(&cola, act);
+                    
+                    id_auto_ns++;
+                    
+                    // Programar siguiente entrada
+                    if (interseccion.total_vehiculos_creados_ns < config.max_autos_por_calle) {
+                        Evento sig = {e->tiempo + config.intervalo_entrada_vehiculos, ENTRADA_NORTE, id_auto_ns, NORTE_A_SUR, NULL, 1};
+                        insertar_evento_thread_safe(&cola, sig);
                     }
-                    omp_unset_lock(&calle->lock);
+                }
+            } else {
+                // Reintentar entrada
+                if (interseccion.total_vehiculos_creados_ns < config.max_autos_por_calle) {
+                    Evento reintento = {e->tiempo + 1.0, ENTRADA_NORTE, id_auto_ns, NORTE_A_SUR, NULL, 1};
+                    insertar_evento_thread_safe(&cola, reintento);
                 }
             }
         }
-    }
-    
-    // Actualizar vehículos existentes
-    omp_set_lock(&calle->lock);
-    for (int i = 0; i < calle->num_vehiculos_activos; i++) {
-        Vehiculo* v = calle->vehiculos[i];
-        if (v) {
-            omp_unset_lock(&calle->lock); // Liberar para la actualización
-            actualizar_vehiculo(v, dt);
-            omp_set_lock(&calle->lock);   // Volver a adquirir
-            
-            // Verificar si el vehículo completó el recorrido
-            if (v->estado == SALIENDO) {
-                calle->total_vehiculos_completados++;
-                
-                // Remover del array activo
-                calle->vehiculos[i] = calle->vehiculos[calle->num_vehiculos_activos - 1];
-                calle->vehiculos[calle->num_vehiculos_activos - 1] = NULL;
-                calle->num_vehiculos_activos--;
-                i--; // Ajustar índice
-                
-                free(v); // Liberar memoria del vehículo
-            }
-        }
-    }
-    omp_unset_lock(&calle->lock);
-}
-
-// ============================================================================
-// SIMULACIÓN PRINCIPAL
-// ============================================================================
-
-void ejecutar_simulacion_paralela() {
-    printf("Iniciando simulación de 2 calles en paralelo...\n");
-    
-    double tiempo_final = 0.0;
-    int total_vehiculos = config.max_autos_por_calle * 2;
-    
-    // Estimar tiempo final
-    if (config.tiempo_limite_simulacion == 0.0) {
-        double tiempo_por_vehiculo = fmax(config.longitud_calle_ns, config.longitud_calle_oe) / 
-                                    params.velocidad_maxima + 15.0; // Buffer para semáforos
-        tiempo_final = tiempo_por_vehiculo * config.max_autos_por_calle + 
-                      config.intervalo_entrada_vehiculos * config.max_autos_por_calle;
-    } else {
-        tiempo_final = config.tiempo_limite_simulacion;
-    }
-    
-    printf("Simulación estimada: %.1f segundos con %d vehículos total\n", 
-           tiempo_final, total_vehiculos);
-    
-    double ultimo_reporte = 0.0;
-    
-    // BUCLE PRINCIPAL PARALELO
-    while (interseccion.tiempo_actual < tiempo_final) {
         
-        // Actualizar semáforo (un solo thread)
-        #pragma omp single
-        {
-            actualizar_semaforo(interseccion.tiempo_actual);
-        }
-        
-        // Procesar cada calle en paralelo (2 threads)
-        #pragma omp parallel sections
-        {
-            #pragma omp section
-            {
-                procesar_calle(NORTE_SUR);
-            }
-            
-            #pragma omp section  
-            {
-                procesar_calle(OESTE_ESTE);
-            }
-        }
-        
-        // Avanzar tiempo (un solo thread)
-        #pragma omp single
-        {
-            interseccion.tiempo_actual += config.paso_simulacion;
-            
-            // Reportes periódicos
-            if (interseccion.tiempo_actual - ultimo_reporte >= 15.0) {
-                int total_activos = interseccion.calles[0].num_vehiculos_activos + 
-                                   interseccion.calles[1].num_vehiculos_activos;
-                int total_completados = interseccion.calles[0].total_vehiculos_completados + 
-                                       interseccion.calles[1].total_vehiculos_completados;
-                
-                printf("\n=== T=%.1fs | Sem:%s | NS:%d/%d | OE:%d/%d | Intersección:%d ===\n",
-                       interseccion.tiempo_actual,
-                       (semaforo.estado == NS_VERDE) ? "NS-Verde" : "OE-Verde",
-                       interseccion.calles[0].num_vehiculos_activos,
-                       interseccion.calles[0].total_vehiculos_completados,
-                       interseccion.calles[1].num_vehiculos_activos,
-                       interseccion.calles[1].total_vehiculos_completados,
-                       interseccion.num_en_interseccion);
-                
-                ultimo_reporte = interseccion.tiempo_actual;
-            }
-        }
-        
-        // Verificar condición de terminación temprana
-        if (config.tiempo_limite_simulacion == 0.0) {
-            int todos_completados = 1;
-            #pragma omp single
-            {
-                if (interseccion.calles[0].total_vehiculos_completados < config.max_autos_por_calle ||
-                    interseccion.calles[1].total_vehiculos_completados < config.max_autos_por_calle) {
-                    todos_completados = 0;
+        // PROCESAR ENTRADA ESTE-OESTE
+        else if (e->tipo == ENTRADA_ESTE && interseccion.total_vehiculos_creados_eo < config.max_autos_por_calle) {
+            // Verificar espacio
+            int puede_entrar = 1;
+            omp_set_lock(&interseccion.lock_sistema);
+            for (int i = 0; i < interseccion.num_vehiculos_eo; i++) {
+                Vehiculo* v = interseccion.vehiculos_este_oeste[i];
+                if (v && v->posicion < params.longitud_vehiculo + params.distancia_seguridad_min) {
+                    puede_entrar = 0;
+                    break;
                 }
             }
-            if (todos_completados) break;
+            omp_unset_lock(&interseccion.lock_sistema);
+            
+            if (puede_entrar) {
+                Vehiculo* v = (Vehiculo*)calloc(1, sizeof(Vehiculo));
+                if (v) {
+                    v->id = id_auto_eo;
+                    v->direccion = ESTE_A_OESTE;
+                    v->estado = ENTRANDO;
+                    v->aceleracion = params.aceleracion_maxima;
+                    v->tiempo_entrada = e->tiempo;
+                    v->ultimo_cambio_estado = e->tiempo;
+                    v->thread_id = omp_get_thread_num();
+                    
+                    omp_set_lock(&interseccion.lock_sistema);
+                    todos_vehiculos_eo[interseccion.total_vehiculos_creados_eo] = v;
+                    interseccion.vehiculos_este_oeste[interseccion.num_vehiculos_eo++] = v;
+                    interseccion.total_vehiculos_creados_eo++;
+                    omp_unset_lock(&interseccion.lock_sistema);
+                    
+                    // Programar actualización
+                    Evento act = {e->tiempo + config.paso_simulacion, ACTUALIZACION_VEHICULO, v->id, ESTE_A_OESTE, v, 0};
+                    insertar_evento_thread_safe(&cola, act);
+                    
+                    id_auto_eo++;
+                    
+                    // Programar siguiente entrada
+                    if (interseccion.total_vehiculos_creados_eo < config.max_autos_por_calle) {
+                        Evento sig = {e->tiempo + config.intervalo_entrada_vehiculos, ENTRADA_ESTE, id_auto_eo, ESTE_A_OESTE, NULL, 1};
+                        insertar_evento_thread_safe(&cola, sig);
+                    }
+                }
+            } else {
+                // Reintentar entrada
+                if (interseccion.total_vehiculos_creados_eo < config.max_autos_por_calle) {
+                    Evento reintento = {e->tiempo + 1.0, ENTRADA_ESTE, id_auto_eo, ESTE_A_OESTE, NULL, 1};
+                    insertar_evento_thread_safe(&cola, reintento);
+                }
+            }
         }
+        
+        // PROCESAR ACTUALIZACIÓN DE VEHÍCULO
+        else if (e->tipo == ACTUALIZACION_VEHICULO) {
+            Vehiculo* v = e->vehiculo;
+            
+            if (v && v->estado != SALIENDO) {
+                double dt = config.paso_simulacion;
+                
+                // Actualizar vehículo usando paralelismo
+                #pragma omp task firstprivate(v, dt)
+                {
+                    actualizar_vehiculo_interseccion(v, dt);
+                    registrar_estado_vehiculo_thread_safe(v);
+                }
+                #pragma omp taskwait
+                
+                // Verificar salida del sistema
+                double longitud_calle = (v->direccion == NORTE_A_SUR) ? config.longitud_calle_ns : config.longitud_calle_eo;
+                
+                if (v->posicion >= longitud_calle) {
+                    v->tiempo_salida = interseccion.tiempo_actual;
+                    v->estado = SALIENDO;
+                    
+                    double tiempo_total = v->tiempo_salida - v->tiempo_entrada;
+                    printf("[%.2f] Vehículo %d (%s) completa recorrido en %.2fs\n",
+                           interseccion.tiempo_actual, v->id,
+                           (v->direccion == NORTE_A_SUR) ? "NS" : "EO", tiempo_total);
+                    
+                    // Remover de vehículos activos
+                    omp_set_lock(&interseccion.lock_sistema);
+                    if (v->direccion == NORTE_A_SUR) {
+                        for (int i = 0; i < interseccion.num_vehiculos_ns; i++) {
+                            if (interseccion.vehiculos_norte_sur[i] == v) {
+                                interseccion.vehiculos_norte_sur[i] = interseccion.vehiculos_norte_sur[interseccion.num_vehiculos_ns - 1];
+                                interseccion.vehiculos_norte_sur[interseccion.num_vehiculos_ns - 1] = NULL;
+                                interseccion.num_vehiculos_ns--;
+                                interseccion.total_vehiculos_completados_ns++;
+                                break;
+                            }
+                        }
+                    } else {
+                        for (int i = 0; i < interseccion.num_vehiculos_eo; i++) {
+                            if (interseccion.vehiculos_este_oeste[i] == v) {
+                                interseccion.vehiculos_este_oeste[i] = interseccion.vehiculos_este_oeste[interseccion.num_vehiculos_eo - 1];
+                                interseccion.vehiculos_este_oeste[interseccion.num_vehiculos_eo - 1] = NULL;
+                                interseccion.num_vehiculos_eo--;
+                                interseccion.total_vehiculos_completados_eo++;
+                                break;
+                            }
+                        }
+                    }
+                    omp_unset_lock(&interseccion.lock_sistema);
+                } else {
+                    // Programar siguiente actualización
+                    Evento siguiente = {e->tiempo + config.paso_simulacion, ACTUALIZACION_VEHICULO, v->id, v->direccion, v, 0};
+                    insertar_evento_thread_safe(&cola, siguiente);
+                }
+            }
+        }
+        
+        // REPORTES PERIÓDICOS
+        if (interseccion.tiempo_actual - ultimo_reporte >= 20.0) {
+            imprimir_estado_interseccion();
+            registrar_estado_interseccion();
+            ultimo_reporte = interseccion.tiempo_actual;
+            
+            int completados_total = interseccion.total_vehiculos_completados_ns + interseccion.total_vehiculos_completados_eo;
+            double porcentaje = (double)completados_total / max_vehiculos_total * 100.0;
+            printf(">>> PROGRESO: %.1f%% completado (%d/%d vehículos) - Tiempo: %.1fs <<<\n\n", 
+                   porcentaje, completados_total, max_vehiculos_total, interseccion.tiempo_actual);
+        }
+        
+        free(e);
     }
     
-    printf("Simulación completada en %.2f segundos\n", interseccion.tiempo_actual);
-}
-
-// ============================================================================
-// REPORTES Y ESTADÍSTICAS
-// ============================================================================
-
-const char* calle_str(DireccionCalle calle) {
-    return (calle == NORTE_SUR) ? "Norte→Sur" : "Oeste→Este";
-}
-
-void imprimir_estadisticas_finales() {
-    printf("\n==== ESTADÍSTICAS FINALES ====\n");
+    // REPORTES FINALES
+    printf("\n=== SIMULACIÓN DE INTERSECCIÓN COMPLETADA ===\n");
+    printf("Eventos procesados: %d\n", eventos_procesados);
     printf("Tiempo total: %.2f segundos\n", interseccion.tiempo_actual);
+    printf("Vehículos Norte-Sur: %d creados, %d completados\n", 
+           interseccion.total_vehiculos_creados_ns, interseccion.total_vehiculos_completados_ns);
+    printf("Vehículos Este-Oeste: %d creados, %d completados\n", 
+           interseccion.total_vehiculos_creados_eo, interseccion.total_vehiculos_completados_eo);
     printf("Ciclos de semáforo: %d\n", semaforo.ciclos_completados);
     
-    int total_creados = 0;
-    int total_completados = 0;
+    // Generar estadísticas finales
+    generar_estadisticas_interseccion(todos_vehiculos_ns, todos_vehiculos_eo);
     
-    printf("\n=== ESTADÍSTICAS POR CALLE ===\n");
-    printf("Calle        | Creados | Completados | Eficiencia\n");
-    printf("-------------|---------|-------------|----------\n");
+    // Limpieza
+    destruir_cola_eventos(&cola);
     
-    for (int c = 0; c < 2; c++) {
-        SistemaCalle* calle = &interseccion.calles[c];
-        total_creados += calle->total_vehiculos_creados;
-        total_completados += calle->total_vehiculos_completados;
-        
-        double eficiencia = (calle->total_vehiculos_creados > 0) ? 
-                           ((double)calle->total_vehiculos_completados / calle->total_vehiculos_creados) * 100.0 : 0.0;
-        
-        printf("%-12s | %7d | %11d | %9.1f%%\n",
-               calle_str((DireccionCalle)c),
-               calle->total_vehiculos_creados,
-               calle->total_vehiculos_completados,
-               eficiencia);
+    for (int i = 0; i < interseccion.total_vehiculos_creados_ns; i++) {
+        if (todos_vehiculos_ns[i]) free(todos_vehiculos_ns[i]);
+    }
+    for (int i = 0; i < interseccion.total_vehiculos_creados_eo; i++) {
+        if (todos_vehiculos_eo[i]) free(todos_vehiculos_eo[i]);
     }
     
-    printf("-------------|---------|-------------|----------\n");
-    double eficiencia_total = (total_creados > 0) ? 
-                             ((double)total_completados / total_creados) * 100.0 : 0.0;
-    printf("TOTAL        | %7d | %11d | %9.1f%%\n",
-           total_creados, total_completados, eficiencia_total);
+    free(todos_vehiculos_ns);
+    free(todos_vehiculos_eo);
+}
+
+// ============================================================================
+// ESTADÍSTICAS FINALES PARA INTERSECCIÓN
+// ============================================================================
+
+void generar_estadisticas_interseccion(Vehiculo** vehiculos_ns, Vehiculo** vehiculos_eo) {
+    printf("\n==== ESTADÍSTICAS FINALES DE INTERSECCIÓN ====\n");
     
-    printf("\nThroughput total: %.2f vehículos/segundo\n", 
-           (double)total_completados / interseccion.tiempo_actual);
-    
-    // Guardar en CSV
+    // Crear archivos de resultados
     char nombre_archivo[128];
     time_t ahora = time(NULL);
     struct tm *t = localtime(&ahora);
-    strftime(nombre_archivo, sizeof(nombre_archivo), "interseccion_simple_%Y%m%d_%H%M%S.csv", t);
+    strftime(nombre_archivo, sizeof(nombre_archivo), "resultados_interseccion_%Y%m%d_%H%M%S.csv", t);
     
     FILE *csv = fopen(nombre_archivo, "w");
-    if (csv) {
-        fprintf(csv, "# SIMULACION_2_CALLES\n");
-        fprintf(csv, "TiempoTotal,%.2f\n", interseccion.tiempo_actual);
-        fprintf(csv, "CiclosSemaforo,%d\n", semaforo.ciclos_completados);
-        fprintf(csv, "VehiculosCreados,%d\n", total_creados);
-        fprintf(csv, "VehiculosCompletados,%d\n", total_completados);
-        fprintf(csv, "EficienciaTotal,%.1f\n", eficiencia_total);
-        fprintf(csv, "Throughput,%.2f\n", (double)total_completados / interseccion.tiempo_actual);
-        fprintf(csv, "\nCalle,Creados,Completados,Eficiencia\n");
+    if (!csv) {
+        printf("ERROR: No se pudo crear archivo CSV: %s\n", nombre_archivo);
+        return;
+    }
+    
+    // Encabezado
+    fprintf(csv, "# ESTADISTICAS_INTERSECCION\n");
+    fprintf(csv, "TiempoTotal,%.2f\n", interseccion.tiempo_actual);
+    fprintf(csv, "VehiculosNS,%d,%d\n", interseccion.total_vehiculos_creados_ns, interseccion.total_vehiculos_completados_ns);
+    fprintf(csv, "VehiculosEO,%d,%d\n", interseccion.total_vehiculos_creados_eo, interseccion.total_vehiculos_completados_eo);
+    fprintf(csv, "CiclosSemaforo,%d\n", semaforo.ciclos_completados);
+    fprintf(csv, "# DATOS_VEHICULOS\n");
+    fprintf(csv, "ID,Direccion,Entrada,Interseccion,Salida,TiempoEspera,TiempoCruce,VelProm\n");
+    
+    // Procesar vehículos Norte-Sur
+    if (interseccion.total_vehiculos_completados_ns > 0) {
+        double tiempo_promedio_ns = 0.0, velocidad_promedio_ns = 0.0;
+        double tiempo_espera_promedio_ns = 0.0, tiempo_cruce_promedio_ns = 0.0;
         
-        for (int c = 0; c < 2; c++) {
-            SistemaCalle* calle = &interseccion.calles[c];
-            double efic = (calle->total_vehiculos_creados > 0) ? 
-                         ((double)calle->total_vehiculos_completados / calle->total_vehiculos_creados) * 100.0 : 0.0;
-            fprintf(csv, "%s,%d,%d,%.1f\n", 
-                    calle_str((DireccionCalle)c),
-                    calle->total_vehiculos_creados,
-                    calle->total_vehiculos_completados,
-                    efic);
+        for (int i = 0; i < interseccion.total_vehiculos_creados_ns; i++) {
+            if (vehiculos_ns[i] && vehiculos_ns[i]->estado == SALIENDO) {
+                Vehiculo* v = vehiculos_ns[i];
+                double tiempo_recorrido = v->tiempo_salida - v->tiempo_entrada;
+                tiempo_promedio_ns += tiempo_recorrido;
+                
+                if (tiempo_recorrido > 0) {
+                    velocidad_promedio_ns += config.longitud_calle_ns / tiempo_recorrido;
+                }
+                
+                tiempo_espera_promedio_ns += v->tiempo_esperando_interseccion;
+                tiempo_cruce_promedio_ns += v->tiempo_cruzando;
+                
+                // Guardar en CSV
+                fprintf(csv, "%d,NS,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f\n",
+                        v->id, v->tiempo_entrada, v->tiempo_llegada_interseccion,
+                        v->tiempo_salida, v->tiempo_esperando_interseccion,
+                        v->tiempo_cruzando, v->velocidad_promedio);
+            }
         }
         
-        fclose(csv);
-        printf("Resultados guardados en: %s\n", nombre_archivo);
-    } else {
-        printf("ERROR: No se pudo crear archivo CSV\n");
+        tiempo_promedio_ns /= interseccion.total_vehiculos_completados_ns;
+        velocidad_promedio_ns /= interseccion.total_vehiculos_completados_ns;
+        tiempo_espera_promedio_ns /= interseccion.total_vehiculos_completados_ns;
+        tiempo_cruce_promedio_ns /= interseccion.total_vehiculos_completados_ns;
+        
+        printf("NORTE-SUR:\n");
+        printf("  Tiempo promedio: %.2f s\n", tiempo_promedio_ns);
+        printf("  Velocidad promedio: %.2f m/s (%.1f km/h)\n", velocidad_promedio_ns, velocidad_promedio_ns * 3.6);
+        printf("  Tiempo espera en intersección: %.2f s\n", tiempo_espera_promedio_ns);
+        printf("  Tiempo cruzando: %.2f s\n", tiempo_cruce_promedio_ns);
     }
+    
+    // Procesar vehículos Este-Oeste
+    if (interseccion.total_vehiculos_completados_eo > 0) {
+        double tiempo_promedio_eo = 0.0, velocidad_promedio_eo = 0.0;
+        double tiempo_espera_promedio_eo = 0.0, tiempo_cruce_promedio_eo = 0.0;
+        
+        for (int i = 0; i < interseccion.total_vehiculos_creados_eo; i++) {
+            if (vehiculos_eo[i] && vehiculos_eo[i]->estado == SALIENDO) {
+                Vehiculo* v = vehiculos_eo[i];
+                double tiempo_recorrido = v->tiempo_salida - v->tiempo_entrada;
+                tiempo_promedio_eo += tiempo_recorrido;
+                
+                if (tiempo_recorrido > 0) {
+                    velocidad_promedio_eo += config.longitud_calle_eo / tiempo_recorrido;
+                }
+                
+                tiempo_espera_promedio_eo += v->tiempo_esperando_interseccion;
+                tiempo_cruce_promedio_eo += v->tiempo_cruzando;
+                
+                // Guardar en CSV
+                fprintf(csv, "%d,EO,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f\n",
+                        v->id, v->tiempo_entrada, v->tiempo_llegada_interseccion,
+                        v->tiempo_salida, v->tiempo_esperando_interseccion,
+                        v->tiempo_cruzando, v->velocidad_promedio);
+            }
+        }
+        
+        tiempo_promedio_eo /= interseccion.total_vehiculos_completados_eo;
+        velocidad_promedio_eo /= interseccion.total_vehiculos_completados_eo;
+        tiempo_espera_promedio_eo /= interseccion.total_vehiculos_completados_eo;
+        tiempo_cruce_promedio_eo /= interseccion.total_vehiculos_completados_eo;
+        
+        printf("ESTE-OESTE:\n");
+        printf("  Tiempo promedio: %.2f s\n", tiempo_promedio_eo);
+        printf("  Velocidad promedio: %.2f m/s (%.1f km/h)\n", velocidad_promedio_eo, velocidad_promedio_eo * 3.6);
+        printf("  Tiempo espera en intersección: %.2f s\n", tiempo_espera_promedio_eo);
+        printf("  Tiempo cruzando: %.2f s\n", tiempo_cruce_promedio_eo);
+    }
+    
+    fclose(csv);
+    printf("\nResultados guardados en: %s\n", nombre_archivo);
 }
 
 // ============================================================================
-// CONFIGURACIÓN
+// FUNCIONES DE VALIDACIÓN Y CONFIGURACIÓN SEGURA
 // ============================================================================
 
-void configurar_simulacion() {
-    printf("=== CONFIGURACIÓN DE INTERSECCIÓN DE 2 CALLES ===\n");
-    printf("Calle 1: Norte → Sur (vertical)\n");
-    printf("Calle 2: Oeste → Este (horizontal)\n");
-    printf("Se cruzan en una intersección con semáforo\n\n");
+void limpiar_buffer() {
+    int c;
+    while ((c = getchar()) != '\n' && c != EOF);
+}
+
+int leer_entero_validado_interseccion(const char* mensaje, int valor_actual, int min, int max) {
+    int valor, resultado;
+    char buffer[100];
     
-    char usar_personalizada;
-    printf("¿Usar configuración personalizada? (s/n): ");
-    scanf(" %c", &usar_personalizada);
+    do {
+        printf("%s (actual: %d, rango: %d-%d): ", mensaje, valor_actual, min, max);
+        
+        if (fgets(buffer, sizeof(buffer), stdin) == NULL) {
+            printf("Error de lectura. Usando valor actual.\n");
+            return valor_actual;
+        }
+        
+        if (buffer[0] == '\n') {
+            return valor_actual;
+        }
+        
+        resultado = sscanf(buffer, "%d", &valor);
+        
+        if (resultado != 1) {
+            printf("ERROR: Debe ingresar un número entero válido.\n");
+        } else if (valor < min || valor > max) {
+            printf("ERROR: El valor debe estar entre %d y %d.\n", min, max);
+        } else {
+            return valor;
+        }
+    } while (1);
+}
+
+double leer_double_validado_interseccion(const char* mensaje, double valor_actual, double min, double max) {
+    double valor;
+    int resultado;
+    char buffer[100];
     
-    if (usar_personalizada == 's' || usar_personalizada == 'S') {
-        printf("\n--- CONFIGURACIÓN BÁSICA ---\n");
+    do {
+        printf("%s (actual: %.2f, rango: %.2f-%.2f): ", mensaje, valor_actual, min, max);
         
-        printf("Vehículos por calle (actual: %d): ", config.max_autos_por_calle);
-        int temp;
-        if (scanf("%d", &temp) == 1 && temp > 0 && temp <= 100) {
-            config.max_autos_por_calle = temp;
+        if (fgets(buffer, sizeof(buffer), stdin) == NULL) {
+            printf("Error de lectura. Usando valor actual.\n");
+            return valor_actual;
         }
         
-        printf("Intervalo de entrada (seg, actual: %.1f): ", config.intervalo_entrada_vehiculos);
-        double temp_d;
-        if (scanf("%lf", &temp_d) == 1 && temp_d > 0.5 && temp_d < 10.0) {
-            config.intervalo_entrada_vehiculos = temp_d;
+        if (buffer[0] == '\n') {
+            return valor_actual;
         }
         
-        printf("\n--- CONFIGURACIÓN DE CALLES ---\n");
-        printf("Longitud calle Norte-Sur (m, actual: %.1f): ", config.longitud_calle_ns);
-        if (scanf("%lf", &temp_d) == 1 && temp_d > 100.0 && temp_d < 1000.0) {
-            config.longitud_calle_ns = temp_d;
+        resultado = sscanf(buffer, "%lf", &valor);
+        
+        if (resultado != 1) {
+            printf("ERROR: Debe ingresar un número decimal válido.\n");
+        } else if (valor < min || valor > max) {
+            printf("ERROR: El valor debe estar entre %.2f y %.2f.\n", min, max);
+        } else {
+            return valor;
+        }
+    } while (1);
+}
+
+char leer_si_no_interseccion(const char* mensaje) {
+    char respuesta;
+    char buffer[100];
+    
+    do {
+        printf("%s (s/n): ", mensaje);
+        
+        if (fgets(buffer, sizeof(buffer), stdin) == NULL) {
+            printf("Error de lectura. Usando 'n' por defecto.\n");
+            return 'n';
         }
         
-        printf("Longitud calle Oeste-Este (m, actual: %.1f): ", config.longitud_calle_oe);
-        if (scanf("%lf", &temp_d) == 1 && temp_d > 100.0 && temp_d < 1000.0) {
-            config.longitud_calle_oe = temp_d;
-        }
+        respuesta = buffer[0];
         
-        printf("Ancho de intersección (m, actual: %.1f): ", config.ancho_interseccion);
-        if (scanf("%lf", &temp_d) == 1 && temp_d > 5.0 && temp_d < 50.0) {
-            config.ancho_interseccion = temp_d;
+        if (respuesta == 's' || respuesta == 'S' || 
+            respuesta == 'n' || respuesta == 'N') {
+            return respuesta;
+        } else {
+            printf("ERROR: Debe ingresar 's' para sí o 'n' para no.\n");
         }
-        
-        printf("\n--- CONFIGURACIÓN DE SEMÁFOROS ---\n");
-        printf("Duración verde Norte-Sur (seg, actual: %.1f): ", semaforo.duracion_ns_verde);
-        if (scanf("%lf", &temp_d) == 1 && temp_d > 10.0 && temp_d < 120.0) {
-            semaforo.duracion_ns_verde = temp_d;
-        }
-        
-        printf("Duración verde Oeste-Este (seg, actual: %.1f): ", semaforo.duracion_oe_verde);
-        if (scanf("%lf", &temp_d) == 1 && temp_d > 10.0 && temp_d < 120.0) {
-            semaforo.duracion_oe_verde = temp_d;
-        }
-        
-        printf("Duración amarillo (seg, actual: %.1f): ", semaforo.duracion_amarillo);
-        if (scanf("%lf", &temp_d) == 1 && temp_d > 2.0 && temp_d < 10.0) {
-            semaforo.duracion_amarillo = temp_d;
-        }
-        
-        printf("\n--- CONFIGURACIÓN AVANZADA ---\n");
-        printf("¿Configurar parámetros avanzados? (s/n): ");
-        char avanzado;
-        scanf(" %c", &avanzado);
-        
-        if (avanzado == 's' || avanzado == 'S') {
-            printf("Velocidad máxima (m/s, actual: %.1f): ", params.velocidad_maxima);
-            if (scanf("%lf", &temp_d) == 1 && temp_d > 3.0 && temp_d < 30.0) {
-                params.velocidad_maxima = temp_d;
-            }
-            
-            printf("Paso de simulación (seg, actual: %.3f): ", config.paso_simulacion);
-            if (scanf("%lf", &temp_d) == 1 && temp_d > 0.01 && temp_d < 0.2) {
-                config.paso_simulacion = temp_d;
-            }
-            
-            printf("Distancia seguridad (m, actual: %.1f): ", params.distancia_seguridad_min);
-            if (scanf("%lf", &temp_d) == 1 && temp_d > 2.0 && temp_d < 15.0) {
-                params.distancia_seguridad_min = temp_d;
-            }
-        }
+    } while (1);
+}
+
+int validar_configuracion_interseccion() {
+    int errores = 0;
+    
+    printf("\n=== VALIDACIÓN DE CONFIGURACIÓN ===\n");
+    
+    // Validar vehículos por calle
+    if (config.max_autos_por_calle <= 0 || config.max_autos_por_calle > 1000) {
+        fprintf(stderr, "ERROR: max_autos_por_calle debe estar entre 1 y 1000 (actual: %d)\n", 
+                config.max_autos_por_calle);
+        errores++;
     }
     
-    // Ajustar posiciones de semáforos automáticamente
-    config.posicion_semaforo_ns = config.longitud_calle_ns / 2.0 - config.ancho_interseccion / 2.0 - 5.0;
-    config.posicion_semaforo_oe = config.longitud_calle_oe / 2.0 - config.ancho_interseccion / 2.0 - 5.0;
+    // Validar longitudes de calles
+    if (config.longitud_calle_ns < 50.0 || config.longitud_calle_ns > 2000.0) {
+        fprintf(stderr, "ERROR: longitud_calle_ns debe estar entre 50 y 2000m (actual: %.1f)\n", 
+                config.longitud_calle_ns);
+        errores++;
+    }
     
+    if (config.longitud_calle_eo < 50.0 || config.longitud_calle_eo > 2000.0) {
+        fprintf(stderr, "ERROR: longitud_calle_eo debe estar entre 50 y 2000m (actual: %.1f)\n", 
+                config.longitud_calle_eo);
+        errores++;
+    }
+    
+    // Validar posición de intersección
+    double min_interseccion_ns = 30.0;
+    double max_interseccion_ns = config.longitud_calle_ns - 30.0;
+    double min_interseccion_eo = 30.0;
+    double max_interseccion_eo = config.longitud_calle_eo - 30.0;
+    
+    if (config.posicion_interseccion < min_interseccion_ns || 
+        config.posicion_interseccion > max_interseccion_ns) {
+        fprintf(stderr, "ERROR: posicion_interseccion para calle NS debe estar entre %.1f y %.1f (actual: %.1f)\n", 
+                min_interseccion_ns, max_interseccion_ns, config.posicion_interseccion);
+        errores++;
+    }
+    
+    if (config.posicion_interseccion < min_interseccion_eo || 
+        config.posicion_interseccion > max_interseccion_eo) {
+        fprintf(stderr, "ERROR: posicion_interseccion para calle EO debe estar entre %.1f y %.1f (actual: %.1f)\n", 
+                min_interseccion_eo, max_interseccion_eo, config.posicion_interseccion);
+        errores++;
+    }
+    
+    // Validar ancho de intersección
+    if (config.ancho_interseccion < 4.0 || config.ancho_interseccion > 20.0) {
+        fprintf(stderr, "ERROR: ancho_interseccion debe estar entre 4 y 20m (actual: %.1f)\n", 
+                config.ancho_interseccion);
+        errores++;
+    }
+    
+    // Validar parámetros de simulación
+    if (config.paso_simulacion <= 0.001 || config.paso_simulacion > 0.5) {
+        fprintf(stderr, "ERROR: paso_simulacion debe estar entre 0.001 y 0.5 (actual: %.3f)\n", 
+                config.paso_simulacion);
+        errores++;
+    }
+    
+    if (config.intervalo_entrada_vehiculos <= 0.1 || config.intervalo_entrada_vehiculos > 10.0) {
+        fprintf(stderr, "ERROR: intervalo_entrada_vehiculos debe estar entre 0.1 y 10.0s (actual: %.2f)\n", 
+                config.intervalo_entrada_vehiculos);
+        errores++;
+    }
+    
+    // Validar parámetros físicos
+    if (params.velocidad_maxima <= 0 || params.velocidad_maxima > 30.0) {
+        fprintf(stderr, "ERROR: velocidad_maxima debe estar entre 1 y 30 m/s (actual: %.1f)\n", 
+                params.velocidad_maxima);
+        errores++;
+    }
+    
+    // Validar duraciones de semáforo
+    if (semaforo.duracion_ns_verde < 10.0 || semaforo.duracion_ns_verde > 120.0) {
+        fprintf(stderr, "ERROR: duracion_ns_verde debe estar entre 10 y 120s (actual: %.1f)\n", 
+                semaforo.duracion_ns_verde);
+        errores++;
+    }
+    
+    if (semaforo.duracion_eo_verde < 10.0 || semaforo.duracion_eo_verde > 120.0) {
+        fprintf(stderr, "ERROR: duracion_eo_verde debe estar entre 10 y 120s (actual: %.1f)\n", 
+                semaforo.duracion_eo_verde);
+        errores++;
+    }
+    
+    if (semaforo.duracion_transicion < 2.0 || semaforo.duracion_transicion > 10.0) {
+        fprintf(stderr, "ERROR: duracion_transicion debe estar entre 2 y 10s (actual: %.1f)\n", 
+                semaforo.duracion_transicion);
+        errores++;
+    }
+    
+    // Validaciones de coherencia
+    if (fabs(config.longitud_calle_ns - config.longitud_calle_eo) > 500.0) {
+        printf("ADVERTENCIA: Gran diferencia entre longitudes de calles (%.1fm vs %.1fm). Puede afectar el equilibrio.\n", 
+               config.longitud_calle_ns, config.longitud_calle_eo);
+    }
+    
+    double distancia_frenado = (params.velocidad_maxima * params.velocidad_maxima) / 
+                              (2.0 * fabs(params.desaceleracion_maxima));
+    double distancia_disponible_ns = config.posicion_interseccion - config.ancho_interseccion/2;
+    double distancia_disponible_eo = config.posicion_interseccion - config.ancho_interseccion/2;
+    
+    if (distancia_frenado > distancia_disponible_ns * 0.8) {
+        printf("ADVERTENCIA: Distancia de frenado (%.1fm) muy grande para aproximación NS (%.1fm disponibles)\n", 
+               distancia_frenado, distancia_disponible_ns);
+    }
+    
+    if (distancia_frenado > distancia_disponible_eo * 0.8) {
+        printf("ADVERTENCIA: Distancia de frenado (%.1fm) muy grande para aproximación EO (%.1fm disponibles)\n", 
+               distancia_frenado, distancia_disponible_eo);
+    }
+    
+    // Estimación de memoria
+    size_t memoria_estimada = config.max_autos_por_calle * 2 * sizeof(Vehiculo) + 
+                             config.max_autos_por_calle * 2 * sizeof(Vehiculo*) + 
+                             sizeof(SistemaInterseccion);
+    double memoria_mb = memoria_estimada / (1024.0 * 1024.0);
+    
+    if (memoria_mb > 200.0) {
+        printf("ADVERTENCIA: Memoria estimada: %.1f MB. Simulación puede ser lenta.\n", memoria_mb);
+    } else {
+        printf("Memoria estimada: %.2f MB\n", memoria_mb);
+    }
+    
+    if (errores > 0) {
+        fprintf(stderr, "\nSe encontraron %d errores en la configuración.\n", errores);
+        return 0;
+    } else {
+        printf("✓ Configuración válida\n");
+        return 1;
+    }
+}
+
+void configurar_interseccion() {
+    printf("=== CONFIGURACIÓN DE INTERSECCIÓN ===\n");
+    printf("Instrucciones:\n");
+    printf("- Presione Enter para mantener el valor actual\n");
+    printf("- Los valores deben estar dentro de los rangos permitidos\n");
+    printf("- Use punto decimal (.) para números decimales\n\n");
+    
+    char respuesta = leer_si_no_interseccion("¿Desea usar configuración personalizada?");
+    
+    if (respuesta == 's' || respuesta == 'S') {
+        printf("\n--- CONFIGURACIÓN DE VEHÍCULOS ---\n");
+        config.max_autos_por_calle = leer_entero_validado_interseccion(
+            "Número máximo de autos por calle", 
+            config.max_autos_por_calle, 1, 1000
+        );
+        
+        config.intervalo_entrada_vehiculos = leer_double_validado_interseccion(
+            "Intervalo entre entradas de vehículos (segundos)",
+            config.intervalo_entrada_vehiculos, 0.1, 10.0
+        );
+        
+        printf("\n--- CONFIGURACIÓN DE CALLES ---\n");
+        config.longitud_calle_ns = leer_double_validado_interseccion(
+            "Longitud de la calle Norte-Sur (metros)",
+            config.longitud_calle_ns, 50.0, 2000.0
+        );
+        
+        config.longitud_calle_eo = leer_double_validado_interseccion(
+            "Longitud de la calle Este-Oeste (metros)",
+            config.longitud_calle_eo, 50.0, 2000.0
+        );
+        
+        // Calcular límites válidos para la intersección
+        double min_interseccion = fmax(30.0, fmax(config.longitud_calle_ns, config.longitud_calle_eo) * 0.2);
+        double max_interseccion = fmin(config.longitud_calle_ns - 30.0, config.longitud_calle_eo - 30.0);
+        
+        if (config.posicion_interseccion < min_interseccion || config.posicion_interseccion > max_interseccion) {
+            config.posicion_interseccion = (min_interseccion + max_interseccion) / 2.0;
+            printf("Ajustando posición de intersección a %.1fm\n", config.posicion_interseccion);
+        }
+        
+        config.posicion_interseccion = leer_double_validado_interseccion(
+            "Posición de la intersección (metros desde el inicio)",
+            config.posicion_interseccion, min_interseccion, max_interseccion
+        );
+        
+        config.ancho_interseccion = leer_double_validado_interseccion(
+            "Ancho de la zona de intersección (metros)",
+            config.ancho_interseccion, 4.0, 20.0
+        );
+        
+        printf("\n--- CONFIGURACIÓN DE VELOCIDAD ---\n");
+        params.velocidad_maxima = leer_double_validado_interseccion(
+            "Velocidad máxima (m/s)",
+            params.velocidad_maxima, 1.0, 30.0
+        );
+        
+        printf("    (%.1f m/s = %.1f km/h)\n", 
+               params.velocidad_maxima, params.velocidad_maxima * 3.6);
+        
+        printf("\n--- CONFIGURACIÓN DEL SEMÁFORO ---\n");
+        semaforo.duracion_ns_verde = leer_double_validado_interseccion(
+            "Duración de luz verde Norte-Sur (segundos)",
+            semaforo.duracion_ns_verde, 10.0, 120.0
+        );
+        
+        semaforo.duracion_eo_verde = leer_double_validado_interseccion(
+            "Duración de luz verde Este-Oeste (segundos)",
+            semaforo.duracion_eo_verde, 10.0, 120.0
+        );
+        
+        semaforo.duracion_transicion = leer_double_validado_interseccion(
+            "Duración de transición/amarillo (segundos)",
+            semaforo.duracion_transicion, 2.0, 10.0
+        );
+        
+        printf("\n--- CONFIGURACIÓN AVANZADA ---\n");
+        char config_avanzada = leer_si_no_interseccion("¿Configurar parámetros avanzados?");
+        
+        if (config_avanzada == 's' || config_avanzada == 'S') {
+            config.paso_simulacion = leer_double_validado_interseccion(
+                "Paso de simulación (segundos)",
+                config.paso_simulacion, 0.01, 0.5
+            );
+            
+            params.aceleracion_maxima = leer_double_validado_interseccion(
+                "Aceleración máxima (m/s²)",
+                params.aceleracion_maxima, 0.5, 8.0
+            );
+            
+            params.desaceleracion_maxima = leer_double_validado_interseccion(
+                "Desaceleración máxima (m/s²) - valor positivo",
+                fabs(params.desaceleracion_maxima), 1.0, 12.0
+            );
+            params.desaceleracion_maxima = -fabs(params.desaceleracion_maxima);
+            
+            params.distancia_seguridad_min = leer_double_validado_interseccion(
+                "Distancia mínima de seguridad (metros)",
+                params.distancia_seguridad_min, 1.0, 15.0
+            );
+        }
+        
+        printf("\n--- VALIDANDO CONFIGURACIÓN ---\n");
+        
+        // Ajustar paso de simulación si es necesario
+        double paso_max_recomendado = config.intervalo_entrada_vehiculos / 10.0;
+        if (config.paso_simulacion > paso_max_recomendado) {
+            printf("Ajustando paso de simulación a %.3f por coherencia\n", paso_max_recomendado);
+            config.paso_simulacion = paso_max_recomendado;
+        }
+        
+        printf("Configuración personalizada aplicada.\n");
+    } else {
+        printf("Usando configuración por defecto.\n");
+    }
+    
+    // Mostrar configuración final
     printf("\n=== CONFIGURACIÓN FINAL ===\n");
-    printf("Vehículos por calle: %d (Total: %d)\n", 
-           config.max_autos_por_calle, config.max_autos_por_calle * 2);
-    printf("Calle Norte-Sur: %.1fm\n", config.longitud_calle_ns);
-    printf("Calle Oeste-Este: %.1fm\n", config.longitud_calle_oe);
-    printf("Intersección: %.1fm x %.1fm\n", 
-           config.ancho_interseccion, config.ancho_interseccion);
-    printf("Semáforo NS: %.1fs verde, OE: %.1fs verde, Amarillo: %.1fs\n", 
-           semaforo.duracion_ns_verde, semaforo.duracion_oe_verde, semaforo.duracion_amarillo);
+    printf("Vehículos por calle: %d\n", config.max_autos_por_calle);
+    printf("Longitud Norte-Sur: %.1f m\n", config.longitud_calle_ns);
+    printf("Longitud Este-Oeste: %.1f m\n", config.longitud_calle_eo);
+    printf("Posición intersección: %.1f m\n", config.posicion_interseccion);
+    printf("Ancho intersección: %.1f m\n", config.ancho_interseccion);
     printf("Velocidad máxima: %.1f m/s (%.1f km/h)\n", 
            params.velocidad_maxima, params.velocidad_maxima * 3.6);
-    printf("OpenMP threads: %d\n", omp_get_max_threads());
+    printf("Semáforo NS: %.1fs, EO: %.1fs, Transición: %.1fs\n", 
+           semaforo.duracion_ns_verde, semaforo.duracion_eo_verde, semaforo.duracion_transicion);
+    printf("Intervalo entrada: %.1f s\n", config.intervalo_entrada_vehiculos);
+    printf("Paso simulación: %.3f s\n", config.paso_simulacion);
+    printf("Threads OpenMP: %d\n", omp_get_max_threads());
     printf("===============================\n\n");
 }
 
 // ============================================================================
-// FUNCIÓN MAIN
+// FUNCIÓN PRINCIPAL
 // ============================================================================
 
 int main() {
-    printf("=== SIMULADOR DE INTERSECCIÓN SIMPLE CON OPENMP ===\n");
-    printf("Simula 2 calles que se cruzan:\n");
-    printf("• Calle Norte → Sur (solo una dirección)\n");
-    printf("• Calle Oeste → Este (solo una dirección)\n");
-    printf("• Intersección controlada por semáforo\n");
-    printf("• Procesamiento paralelo con OpenMP (2 threads)\n\n");
+    srand((unsigned int)time(NULL));
     
-    // Configurar OpenMP para 2 threads
-    omp_set_num_threads(2);
-    printf("OpenMP configurado con %d threads\n\n", omp_get_max_threads());
+    printf("=== SIMULACIÓN DE INTERSECCIÓN CON PARALELISMO OpenMP ===\n");
+    printf("Características:\n");
+    printf("- Intersección de dos calles (Norte-Sur y Este-Oeste)\n");
+    printf("- Paralelismo con OpenMP\n");
+    printf("- Control inteligente de semáforos\n");
+    printf("- Detección de conflictos en intersección\n");
+    printf("- Estadísticas detalladas por calle\n");
+    printf("- Archivos CSV con datos completos\n\n");
     
-    // Configuración
-    configurar_simulacion();
+    // Configurar OpenMP
+    int num_threads = fmin(4, omp_get_max_threads());
+    omp_set_num_threads(num_threads);
     
-    // Validación básica
-    if (config.max_autos_por_calle <= 0 || config.max_autos_por_calle > 200) {
-        fprintf(stderr, "ERROR: Número de vehículos por calle inválido\n");
-        return 1;
-    }
+    printf("Configurando OpenMP con %d threads\n", num_threads);
     
-    if (config.longitud_calle_ns <= config.ancho_interseccion || 
-        config.longitud_calle_oe <= config.ancho_interseccion) {
-        fprintf(stderr, "ERROR: Las calles deben ser más largas que la intersección\n");
+    // Configuración y validación
+    configurar_interseccion();
+    
+    if (!validar_configuracion_interseccion()) {
+        fprintf(stderr, "Configuración inválida. Terminando.\n");
         return 1;
     }
     
     // Inicializar sistema
     inicializar_sistema();
+    inicializar_csv_estados();
     
-    // Ejecutar simulación
-    printf("Iniciando simulación paralela de 2 calles...\n");
-    
+    // Ejecutar simulación de forma secuencial con paralelismo controlado
+    printf("Iniciando simulación de intersección...\n\n");
     clock_t inicio = clock();
     
-    #pragma omp parallel
-    {
-        ejecutar_simulacion_paralela();
-    }
+    // Ejecutar sin pragma omp parallel
+    procesar_eventos_interseccion_paralelo();
     
     clock_t fin = clock();
     double tiempo_ejecucion = ((double)(fin - inicio)) / CLOCKS_PER_SEC;
     
-    // Mostrar resultados
-    imprimir_estadisticas_finales();
+    // Cerrar archivos
+    cerrar_csv_estados();
     
-    printf("\n=== RENDIMIENTO ===\n");
+    printf("\n=== MÉTRICAS DE RENDIMIENTO ===\n");
     printf("Tiempo de ejecución: %.3f segundos\n", tiempo_ejecucion);
     printf("Tiempo simulado: %.2f segundos\n", interseccion.tiempo_actual);
     printf("Factor de aceleración: %.1fx\n", interseccion.tiempo_actual / tiempo_ejecucion);
-    
-    int total_vehiculos = interseccion.calles[0].total_vehiculos_completados + 
-                         interseccion.calles[1].total_vehiculos_completados;
-    printf("Vehículos completados: %d\n", total_vehiculos);
-    printf("Throughput: %.1f vehículos/segundo real\n", 
-           (double)total_vehiculos / tiempo_ejecucion);
-    
-    // Análisis de eficiencia de intersección
-    double ciclo_total = semaforo.duracion_ns_verde + semaforo.duracion_amarillo +
-                        semaforo.duracion_oe_verde + semaforo.duracion_amarillo;
-    double utilizacion_ns = (semaforo.duracion_ns_verde + semaforo.duracion_amarillo) / ciclo_total * 100.0;
-    double utilizacion_oe = (semaforo.duracion_oe_verde + semaforo.duracion_amarillo) / ciclo_total * 100.0;
-    
-    printf("\nEficiencia de semáforo:\n");
-    printf("• Norte-Sur utiliza %.1f%% del tiempo\n", utilizacion_ns);
-    printf("• Oeste-Este utiliza %.1f%% del tiempo\n", utilizacion_oe);
-    printf("• Ciclos completados: %d\n", semaforo.ciclos_completados);
+    printf("Eventos procesados: %d\n", eventos_procesados);
+    printf("Throughput total: %.1f vehículos/segundo\n", 
+           (double)(interseccion.total_vehiculos_completados_ns + interseccion.total_vehiculos_completados_eo) / interseccion.tiempo_actual);
     
     // Limpiar sistema
     limpiar_sistema();
     
-    printf("\nSimulación completada exitosamente.\n");
+    printf("\nSimulación de intersección completada exitosamente.\n");
+    
     return 0;
 }

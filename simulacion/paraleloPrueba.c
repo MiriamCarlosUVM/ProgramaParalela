@@ -550,12 +550,38 @@ omp_lock_t lock_csv;
 void inicializar_csv_estados() {
     omp_init_lock(&lock_csv);
     
-    char nombre_estados[128], nombre_interseccion[128];
+    // Obtener directorio del código fuente usando __FILE__
+    char dir_path[1024];
+    const char* file_path = __FILE__;
+    
+    // Copiar la ruta y buscar el último separador
+    strncpy(dir_path, file_path, sizeof(dir_path) - 1);
+    dir_path[sizeof(dir_path) - 1] = '\0';
+    
+    // Buscar el último / o \ para extraer solo el directorio
+    char *last_sep = strrchr(dir_path, '\\');
+    if (!last_sep) last_sep = strrchr(dir_path, '/');
+    
+    if (last_sep) {
+        *last_sep = '\0';  // Truncar en el último separador
+    } else {
+        strcpy(dir_path, ".");  // Si no hay separador, usar directorio actual
+    }
+    
+    char nombre_estados[512], nombre_interseccion[512];
     time_t ahora = time(NULL);
     struct tm *t = localtime(&ahora);
     
-    strftime(nombre_estados, sizeof(nombre_estados), "estados_interseccion_%Y%m%d_%H%M%S.csv", t);
-    strftime(nombre_interseccion, sizeof(nombre_interseccion), "interseccion_%Y%m%d_%H%M%S.csv", t);
+    char timestamp[64];
+    strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", t);
+    
+    // Construir rutas completas
+    snprintf(nombre_estados, sizeof(nombre_estados), 
+             "%s/estados_interseccion_%s.csv", dir_path, timestamp);
+    snprintf(nombre_interseccion, sizeof(nombre_interseccion), 
+             "%s/interseccion_%s.csv", dir_path, timestamp);
+    
+    printf("Directorio de código fuente: %s\n", dir_path);
     
     csv_estados = fopen(nombre_estados, "w");
     csv_interseccion = fopen(nombre_interseccion, "w");
@@ -563,14 +589,20 @@ void inicializar_csv_estados() {
     if (csv_estados) {
         fprintf(csv_estados, "Tiempo,ID,Direccion,Posicion,Velocidad,Estado,Semaforo,Thread\n");
         fflush(csv_estados);
+        printf("✓ CSV estados creado: %s\n", nombre_estados);
+    } else {
+        fprintf(stderr, "ERROR: No se pudo crear %s\n", nombre_estados);
+        perror("Razón");
     }
     
     if (csv_interseccion) {
         fprintf(csv_interseccion, "Tiempo,Estado,VehiculosNS,VehiculosEO,EnCruce,DireccionCruzando\n");
         fflush(csv_interseccion);
+        printf("✓ CSV intersección creado: %s\n", nombre_interseccion);
+    } else {
+        fprintf(stderr, "ERROR: No se pudo crear %s\n", nombre_interseccion);
+        perror("Razón");
     }
-    
-    printf("Archivos CSV creados: %s, %s\n", nombre_estados, nombre_interseccion);
 }
 
 void registrar_estado_vehiculo_thread_safe(Vehiculo* v) {
@@ -1046,17 +1078,43 @@ void procesar_eventos_interseccion_paralelo() {
 void generar_estadisticas_interseccion(Vehiculo** vehiculos_ns, Vehiculo** vehiculos_eo) {
     printf("\n==== ESTADÍSTICAS FINALES DE INTERSECCIÓN ====\n");
     
-    // Crear archivos de resultados
-    char nombre_archivo[128];
+    // Obtener directorio del código fuente usando __FILE__
+    char dir_path[1024];
+    const char* file_path = __FILE__;
+    
+    strncpy(dir_path, file_path, sizeof(dir_path) - 1);
+    dir_path[sizeof(dir_path) - 1] = '\0';
+    
+    char *last_sep = strrchr(dir_path, '\\');
+    if (!last_sep) last_sep = strrchr(dir_path, '/');
+    
+    if (last_sep) {
+        *last_sep = '\0';
+    } else {
+        strcpy(dir_path, ".");
+    }
+    
+    char nombre_archivo[512];
     time_t ahora = time(NULL);
     struct tm *t = localtime(&ahora);
-    strftime(nombre_archivo, sizeof(nombre_archivo), "resultados_interseccion_%Y%m%d_%H%M%S.csv", t);
+    
+    char timestamp[64];
+    strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", t);
+    
+    // Construir ruta completa
+    snprintf(nombre_archivo, sizeof(nombre_archivo), 
+             "%s/resultados_interseccion_%s.csv", dir_path, timestamp);
     
     FILE *csv = fopen(nombre_archivo, "w");
     if (!csv) {
         printf("ERROR: No se pudo crear archivo CSV: %s\n", nombre_archivo);
+        perror("Razón");
         return;
     }
+    
+    printf("Creando archivo de resultados: %s\n", nombre_archivo);
+    
+    // ... resto del código igual
     
     // Encabezado
     fprintf(csv, "# ESTADISTICAS_INTERSECCION\n");

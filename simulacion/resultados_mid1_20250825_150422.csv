@@ -1,3 +1,5 @@
+, Trafico denso por entrada rapida         max_autos = 100   longitud_total = 500  intervalo_entrada_vehiculos = 0.1  posicion_semaforo = 250.
+
 ID,Entrada,Semaforo,Salida,Detenido,VelProm
 # ESTADISTICAS_GENERALES
 TiempoTotal,789.51

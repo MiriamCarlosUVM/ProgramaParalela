@@ -1262,10 +1262,11 @@ int validar_configuracion_interseccion() {
     }
     
     // Validar posición de intersección
-    double min_interseccion_ns = 30.0;
-    double max_interseccion_ns = config.longitud_calle_ns - 30.0;
-    double min_interseccion_eo = 30.0;
-    double max_interseccion_eo = config.longitud_calle_eo - 30.0;
+    double margen_min = fmin(config.longitud_calle_ns, config.longitud_calle_eo) * 0.2;
+    double min_interseccion_ns = margen_min;
+    double max_interseccion_ns = config.longitud_calle_ns - margen_min;
+    double min_interseccion_eo = margen_min;
+    double max_interseccion_eo = config.longitud_calle_eo - margen_min;
     
     if (config.posicion_interseccion < min_interseccion_ns || 
         config.posicion_interseccion > max_interseccion_ns) {
@@ -1402,8 +1403,9 @@ void configurar_interseccion() {
         );
         
         // Calcular límites válidos para la intersección
-        double min_interseccion = fmax(30.0, fmax(config.longitud_calle_ns, config.longitud_calle_eo) * 0.2);
-        double max_interseccion = fmin(config.longitud_calle_ns - 30.0, config.longitud_calle_eo - 30.0);
+        double margen_min = fmin(config.longitud_calle_ns, config.longitud_calle_eo) * 0.2;
+        double min_interseccion = fmax(margen_min, fmax(config.longitud_calle_ns, config.longitud_calle_eo) * 0.2);
+        double max_interseccion = fmin(config.longitud_calle_ns - margen_min, config.longitud_calle_eo - margen_min);
         
         if (config.posicion_interseccion < min_interseccion || config.posicion_interseccion > max_interseccion) {
             config.posicion_interseccion = (min_interseccion + max_interseccion) / 2.0;

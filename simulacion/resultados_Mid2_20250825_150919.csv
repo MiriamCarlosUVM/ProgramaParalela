@@ -1,3 +1,5 @@
+, Trafico fluido por entrada lenta     max_autos = 100  longitud_total = 500  intervalo_entrada_vehiculos = 10   posicion_semaforo = 250.
+
 ID,Entrada,Semaforo,Salida,Detenido,VelProm
 # ESTADISTICAS_GENERALES
 TiempoTotal,1157.00
